@@ -1,0 +1,14 @@
+embedding:
+  provider: openai           # openai | google | ollama
+  model: text-embedding-3-small
+
+search:
+  similarity_threshold: 0.7
+  max_results: 10
+  adaptive_weights: true
+  score_spread_threshold: 0.05
+  rrf_k: 60
+
+connection_finding:
+  similarity_threshold: 0.75
+  max_connections: 5
