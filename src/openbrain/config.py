@@ -29,7 +29,6 @@ class ConnectionConfig(BaseModel):
 
 class SlackConfig(BaseModel):
     retrieval_result_limit: int = 5
-    paperless_channel_id: str = "C0AMG8XDDB2"
 
 
 class PaperlessConfig(BaseModel):

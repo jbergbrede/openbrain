@@ -235,8 +235,6 @@ def create_slack_app(
 
     @app.event("message")
     async def handle_dm(event, client, logger):
-        if settings.slack.paperless_channel_id and event.get("channel") == settings.slack.paperless_channel_id:
-            return await handle_paperless_message(event, client, logger)
         if event.get("channel_type") != "im":
             return
         if event.get("subtype") and event.get("subtype") != "file_share":
@@ -281,6 +279,9 @@ def create_slack_app(
 
         text = event.get("text", "")
         content_text = re.sub(r"<@[A-Z0-9]+>\s*", "", text, count=1).strip()
+
+        if settings.paperless.base_url and settings.paperless.base_url in text:
+            return await handle_paperless_message(event, client, logger)
 
         if content_text.startswith("?"):
             try:

@@ -15,7 +15,6 @@ connection_finding:
 
 slack:
   retrieval_result_limit: 5
-  paperless_channel_id: "C0AMG8XDDB2"
 
 paperless:
   base_url: "https://paperless.local.madis.tech"
