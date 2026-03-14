@@ -3,8 +3,11 @@ from __future__ import annotations
 from uuid import UUID
 
 import asyncpg
+from nltk.corpus import stopwords
 
 from .models import ActionItem, Chunk, ChunkSearchResult, Memory, SearchResult
+
+_STOPWORDS = frozenset(stopwords.words("english") + stopwords.words("german"))
 
 
 def _row_to_memory(row: asyncpg.Record) -> Memory:
@@ -266,6 +269,13 @@ async def keyword_search_memories(
     limit: int = 10,
     min_rank: float = 0.0,
 ) -> list[SearchResult]:
+    # OR-based query for matching: any word hit surfaces a result.
+    # German compound words (e.g. "Bundesautobahn") won't match a query for
+    # "autobahn" with AND semantics, so we match permissively and let ts_rank
+    # (computed against the original AND query) handle scoring.
+    or_query = " OR ".join(
+        w for w in query.split() if w and w.lower() not in _STOPWORDS
+    )
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -277,17 +287,18 @@ async def keyword_search_memories(
             FROM memories
             WHERE search_vector IS NOT NULL
               AND (
-                search_vector @@ websearch_to_tsquery('english', $1)
-                OR search_vector @@ websearch_to_tsquery('german', $1)
+                search_vector @@ websearch_to_tsquery('english', $2)
+                OR search_vector @@ websearch_to_tsquery('german', $2)
               )
               AND GREATEST(
                     ts_rank(search_vector, websearch_to_tsquery('english', $1)),
                     ts_rank(search_vector, websearch_to_tsquery('german', $1))
-                  ) > $2
+                  ) > $3
             ORDER BY kw_rank DESC
-            LIMIT $3
+            LIMIT $4
             """,
             query,
+            or_query,
             min_rank,
             limit,
         )

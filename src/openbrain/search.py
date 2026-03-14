@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
 from uuid import UUID
 
 import asyncpg
@@ -84,7 +85,6 @@ def rrf_merge(
         scores[mid] *= conn_boost
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    chunk_content, chunk_id = None, None
     return [
         SearchResult(
             memory=memory_map[mid],
@@ -97,13 +97,24 @@ def rrf_merge(
     ]
 
 
+@dataclass
+class SearchDebugInfo:
+    query: str
+    weights: tuple[float, float]
+    effective_weights: tuple[float, float]
+    low_spread_detected: bool
+    semantic_hits: list[dict] = field(default_factory=list)
+    keyword_hits: list[dict] = field(default_factory=list)
+
+
 async def hybrid_search(
     pool: asyncpg.Pool,
     embedder: EmbeddingProvider,
     query: str,
     settings: Settings,
     limit: int = 10,
-) -> list[SearchResult]:
+    debug: bool = False,
+) -> list[SearchResult] | tuple[list[SearchResult], SearchDebugInfo]:
     weights = get_weights(query)
 
     embedding, keyword_results = await asyncio.gather(
@@ -120,19 +131,49 @@ async def hybrid_search(
 
     semantic_results = _promote_chunks_to_memories(chunk_results)
 
-    if settings.search.adaptive_weights and detect_low_spread(
+    low_spread = settings.search.adaptive_weights and detect_low_spread(
         [r.similarity for r in semantic_results],
         threshold=settings.search.score_spread_threshold,
-    ):
+    )
+
+    if low_spread:
         effective_semantic: list[SearchResult] = []
-        weights = (0.0, 1.0)
+        effective_weights = (0.0, 1.0)
     else:
         effective_semantic = semantic_results
+        effective_weights = weights
 
     merged = rrf_merge(
         effective_semantic,
         keyword_results,
-        weights=weights,
+        weights=effective_weights,
         k=settings.search.rrf_k,
     )
-    return merged[:limit]
+    results = merged[:limit]
+
+    if not debug:
+        return results
+
+    debug_info = SearchDebugInfo(
+        query=query,
+        weights=weights,
+        effective_weights=effective_weights,
+        low_spread_detected=low_spread,
+        semantic_hits=[
+            {
+                "memory_id": str(r.memory.id),
+                "similarity": round(r.similarity, 4),
+                "chunk_content": (r.chunk_content or "")[:120],
+            }
+            for r in semantic_results
+        ],
+        keyword_hits=[
+            {
+                "memory_id": str(r.memory.id),
+                "kw_rank": round(r.similarity, 4),
+                "summary": r.memory.summary,
+            }
+            for r in keyword_results
+        ],
+    )
+    return results, debug_info

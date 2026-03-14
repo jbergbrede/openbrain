@@ -6,9 +6,13 @@ import sys
 import logging
 import argparse
 
+import nltk
+
 from .config import load_config
 from .db import close_pool, get_pool
 from .embeddings import get_embedder
+
+nltk.download("stopwords", quiet=True)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -52,16 +52,22 @@ def create_mcp_server(
         return _memory_dict(memory)
 
     @mcp.tool()
-    async def search_memories(query: str, limit: int = 10) -> list[dict]:
-        """Hybrid search over memories (semantic + keyword). Returns matches with connection IDs (not content)."""
-        results = await hybrid_search(
+    async def search_memories(query: str, limit: int = 10, debug: bool = False) -> dict:
+        """Hybrid search over memories (semantic + keyword). Returns matches with connection IDs (not content). Set debug=true for explainability info."""
+        outcome = await hybrid_search(
             pool=pool,
             embedder=embedder,
             query=query,
             settings=settings,
             limit=limit,
+            debug=debug,
         )
-        return [
+        if debug:
+            results, debug_info = outcome
+        else:
+            results = outcome
+
+        hits = [
             {
                 "id": str(r.memory.id),
                 "content": r.memory.content,
@@ -77,6 +83,21 @@ def create_mcp_server(
             }
             for r in results
         ]
+
+        if not debug:
+            return {"results": hits}
+
+        return {
+            "results": hits,
+            "debug": {
+                "query": debug_info.query,
+                "weights": {"semantic": debug_info.effective_weights[0], "keyword": debug_info.effective_weights[1]},
+                "initial_weights": {"semantic": debug_info.weights[0], "keyword": debug_info.weights[1]},
+                "low_spread_detected": debug_info.low_spread_detected,
+                "semantic_hits": debug_info.semantic_hits,
+                "keyword_hits": debug_info.keyword_hits,
+            },
+        }
 
     @mcp.tool()
     async def get_memory(id: str) -> dict | None:
