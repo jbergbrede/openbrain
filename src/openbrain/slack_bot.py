@@ -5,6 +5,7 @@ import re
 import asyncpg
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
+from slack_sdk.errors import SlackApiError
 
 from .config import Settings
 from .embeddings import EmbeddingProvider
@@ -19,13 +20,20 @@ def create_slack_app(
 ) -> tuple[AsyncApp, AsyncSocketModeHandler]:
     app = AsyncApp(token=settings.slack_bot_token)
 
-    async def save_or_update_thread(channel, thread_ts, messages, author):
+    async def mark_done(client, channel, ts):
+        try:
+            await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
+        except SlackApiError as e:
+            if e.response["error"] != "already_reacted":
+                raise
+
+    async def save_or_update_thread(channel, thread_ts, messages, author) -> bool:
         content = "\n\n".join(
             re.sub(r"<@[A-Z0-9]+>\s*", "", m.get("text", "")).strip()
             for m in messages if m.get("text")
         )
         if not content:
-            return
+            return False
         existing_id = await find_memory_by_slack_ts(pool, channel, thread_ts)
         if existing_id:
             await delete_memory(pool, existing_id)
@@ -34,6 +42,7 @@ def create_slack_app(
             content=content, source="slack",
             source_metadata={"channel": channel, "thread_ts": thread_ts, "author": author},
         )
+        return True
 
     @app.event("reaction_added")
     async def handle_reaction(event, client, logger):
@@ -60,7 +69,9 @@ def create_slack_app(
                 thread_result = await client.conversations_replies(
                     channel=channel, ts=thread_ts
                 )
-                await save_or_update_thread(channel, thread_ts, thread_result.get("messages", []), author)
+                saved = await save_or_update_thread(channel, thread_ts, thread_result.get("messages", []), author)
+                if saved:
+                    await mark_done(client, channel, thread_ts)
             else:
                 # standalone message
                 content = message.get("text", "")
@@ -71,7 +82,7 @@ def create_slack_app(
                     content=content, source="slack",
                     source_metadata={"channel": channel, "thread_ts": ts, "author": author},
                 )
-            await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
+                await mark_done(client, channel, ts)
         except Exception as e:
             logger.error(f"Failed to save memory from reaction: {e}")
 
@@ -124,14 +135,17 @@ def create_slack_app(
                     content=content, source="slack",
                     source_metadata={"channel": channel, "thread_ts": ts, "author": user},
                 )
+                await mark_done(client, channel, ts)
+                return
             else:
                 # any thread mention → fetch full thread, upsert
                 result = await client.conversations_replies(
                     channel=channel, ts=thread_ts
                 )
-                await save_or_update_thread(channel, thread_ts, result.get("messages", []), user)
-
-            await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
+                saved = await save_or_update_thread(channel, thread_ts, result.get("messages", []), user)
+                if saved:
+                    await mark_done(client, channel, thread_ts)
+                return
         except Exception as e:
             logger.error(f"Failed to save memory from mention: {e}")
 
