@@ -2,12 +2,10 @@
   "mcpServers": {
     "openbrain": {
       "type": "stdio",
-      "command": "uv",
+      "command": "sh",
       "args": [
-        "run",
-        "openbrain",
-        "--mode",
-        "mcp"
+        "-c",
+        "uv --directory $(git rev-parse --show-toplevel) run openbrain --mode mcp"
       ],
       "env": {}
     }
