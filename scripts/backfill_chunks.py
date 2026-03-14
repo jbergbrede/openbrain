@@ -76,7 +76,7 @@ async def backfill(pool: asyncpg.Pool, embedder) -> None:
 
 async def main() -> None:
     settings = load_config()
-    embedder = get_embedder(settings.embedding, settings)
+    embedder = get_embedder(settings.embedding, settings.model_dump())
     pool = await asyncpg.create_pool(settings.postgres_dsn)
     try:
         await backfill(pool, embedder)
