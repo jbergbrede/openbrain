@@ -169,7 +169,7 @@ def create_slack_app(
     async def handle_dm(event, client, logger):
         if event.get("channel_type") != "im":
             return
-        if event.get("subtype"):
+        if event.get("subtype") and event.get("subtype") != "file_share":
             return
         channel = event["channel"]
         ts = event["ts"]
