@@ -183,6 +183,11 @@ def create_slack_app(
                 logger.error(f"Failed to handle DM retrieval: {e}")
             return
 
+        file_meta = [
+            {"name": f.get("name"), "mime": f.get("mimetype"), "type": f.get("filetype")}
+            for f in event.get("files", [])
+        ]
+        logger.info(f"DM event subtype={event.get('subtype')} files={file_meta}")
         await mark_processing(client, channel, ts)
         try:
             content, extra_meta = await build_message_content(event)
