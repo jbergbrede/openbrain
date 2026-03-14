@@ -30,23 +30,18 @@ class RawChunk:
 
 
 def _split_structural(text: str) -> list[str]:
-    """Split on markdown headers, then double newlines, then single newlines."""
+    """Split on markdown headers, then double newlines. Preserves multi-line blocks."""
     # Split on markdown headers (## or higher)
     header_parts = re.split(r"(?m)^(?=#{1,6} )", text)
     sections: list[str] = []
     for part in header_parts:
         if not part.strip():
             continue
-        # Split on double newlines within each header section
+        # Split on double newlines — preserves lists, code blocks, tables
         para_parts = re.split(r"\n\n+", part)
         for para in para_parts:
-            if not para.strip():
-                continue
-            # Split on single newlines
-            line_parts = para.split("\n")
-            for line in line_parts:
-                if line.strip():
-                    sections.append(line.strip())
+            if para.strip():
+                sections.append(para.strip())
     return sections
 
 
@@ -129,10 +124,11 @@ def chunk_content(
     if current.strip():
         merged.append(current.strip())
 
-    # Add overlap
+    # Add overlap — token_count reflects final content including overlap
     with_overlap = _add_overlap(merged, overlap_tokens)
 
+    enc = tiktoken.get_encoding("cl100k_base")
     return [
-        RawChunk(index=i, content=text, token_count=count_tokens(text))
+        RawChunk(index=i, content=text, token_count=len(enc.encode(text)))
         for i, text in enumerate(with_overlap)
     ]

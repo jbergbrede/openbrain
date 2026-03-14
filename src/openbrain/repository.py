@@ -129,7 +129,7 @@ async def search_chunks(
     pool: asyncpg.Pool,
     embedding: list[float],
     limit: int = 10,
-    threshold: float = 0.7,
+    threshold: float,
 ) -> list[ChunkSearchResult]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -275,7 +275,7 @@ async def keyword_search_memories(
     # (computed against the original AND query) handle scoring.
     or_query = " OR ".join(
         w for w in query.split() if w and w.lower() not in _STOPWORDS
-    )
+    ) or query  # fallback to raw query if all tokens are stopwords
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
