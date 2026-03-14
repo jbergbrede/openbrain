@@ -6,7 +6,7 @@ CREATE TABLE chunks (
     memory_id UUID NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
-    embedding vector,
+    embedding vector(1536),
     token_count INTEGER NOT NULL,
     UNIQUE (memory_id, chunk_index)
 );
