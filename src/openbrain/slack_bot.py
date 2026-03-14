@@ -80,19 +80,7 @@ def create_slack_app(
             # Always fetch full file info: event objects are partial and may lack mimetype/URLs
             file_info_resp = await client.files_info(file=file_id)
             full_file = file_info_resp["file"]
-            log.info(
-                "files.info: id=%s name=%s mime=%s is_audio=%s",
-                full_file.get("id"),
-                full_file.get("name"),
-                full_file.get("mimetype"),
-                is_audio_file(full_file),
-            )
             if is_audio_file(full_file):
-                log.info(
-                    "url_private_download=%s url_private=%s",
-                    full_file.get("url_private_download"),
-                    full_file.get("url_private"),
-                )
                 transcript, duration = await transcribe_slack_file(
                     bot_token=settings.slack_bot_token,
                     file_info=full_file,
@@ -212,18 +200,9 @@ def create_slack_app(
                 logger.error(f"Failed to handle DM retrieval: {e}")
             return
 
-        file_meta = [
-            {"id": f.get("id"), "name": f.get("name"), "mime": f.get("mimetype")} for f in event.get("files", [])
-        ]
-        attachment_meta = [
-            {"file_ids": a.get("file_ids"), "files": [f.get("id") for f in a.get("files", [])]}
-            for a in event.get("attachments", [])
-        ]
-        log.info("handle_dm: subtype=%s files=%s attachments=%s", event.get("subtype"), file_meta, attachment_meta)
         await mark_processing(client, channel, ts)
         try:
             content, extra_meta = await build_message_content(client, event)
-            log.info(f"build_message_content: content_len={len(content)} extra_meta={extra_meta}")
             if not content:
                 await mark_error(client, channel, ts)
                 return
