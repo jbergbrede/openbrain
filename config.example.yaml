@@ -12,3 +12,6 @@ search:
 connection_finding:
   similarity_threshold: 0.75
   max_connections: 5
+
+slack:
+  retrieval_result_limit: 5
