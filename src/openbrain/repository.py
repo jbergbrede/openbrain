@@ -250,6 +250,31 @@ async def update_connections(
         )
 
 
+async def find_memory_by_slack_ts(
+    pool: asyncpg.Pool, channel: str, ts: str
+) -> UUID | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM memories
+            WHERE source = 'slack'
+              AND source_metadata->>'channel' = $1
+              AND source_metadata->>'thread_ts' = $2
+            LIMIT 1
+            """,
+            channel,
+            ts,
+        )
+        return UUID(str(row["id"])) if row else None
+
+
+async def link_memories(pool: asyncpg.Pool, id1: UUID, id2: UUID) -> None:
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await update_connections(conn, id1, [id2])
+            await update_connections(conn, id2, [id1])
+
+
 async def get_distinct_topics(pool: asyncpg.Pool) -> list[str]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
