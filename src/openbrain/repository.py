@@ -153,10 +153,15 @@ async def list_memories(
 
 async def delete_memory(pool: asyncpg.Pool, memory_id: UUID) -> bool:
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM memories WHERE id = $1",
-            str(memory_id),
-        )
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE memories SET connections = array_remove(connections, $1::uuid) WHERE $1::uuid = ANY(connections)",
+                str(memory_id),
+            )
+            result = await conn.execute(
+                "DELETE FROM memories WHERE id = $1",
+                str(memory_id),
+            )
         return result == "DELETE 1"
 
 
@@ -248,6 +253,31 @@ async def update_connections(
             str(cid),
             str(memory_id),
         )
+
+
+async def find_memory_by_slack_ts(
+    pool: asyncpg.Pool, channel: str, ts: str
+) -> UUID | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM memories
+            WHERE source = 'slack'
+              AND source_metadata->>'channel' = $1
+              AND source_metadata->>'thread_ts' = $2
+            LIMIT 1
+            """,
+            channel,
+            ts,
+        )
+        return UUID(str(row["id"])) if row else None
+
+
+async def link_memories(pool: asyncpg.Pool, id1: UUID, id2: UUID) -> None:
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await update_connections(conn, id1, [id2])
+            await update_connections(conn, id2, [id1])
 
 
 async def get_distinct_topics(pool: asyncpg.Pool) -> list[str]:

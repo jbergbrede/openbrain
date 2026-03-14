@@ -67,11 +67,15 @@ async def enrich(content: str, existing_topics: list[str]) -> EnrichmentResult:
         ),
     ):
         if isinstance(message, ResultMessage):
+            if message.is_error:
+                raise RuntimeError(f"Claude agent error: {message.result}")
             result_text = message.result
-    if not result_text:
-        raise RuntimeError("No result from claude agent")
     # strip markdown code fences if present
-    text = result_text.strip()
+    text = (result_text or "").strip()
+    if not text:
+        raise RuntimeError("Empty result from claude agent")
     if text.startswith("```"):
         text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    if not text:
+        raise RuntimeError("Empty JSON body from claude agent")
     return _parse(json.loads(text), original_content=content)
