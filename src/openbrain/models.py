@@ -16,7 +16,6 @@ class Memory:
     content: str
     created_at: datetime
     summary: str | None = None
-    embedding: list[float] | None = None
     people: list[str] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
     action_items: list[ActionItem] = field(default_factory=list)
@@ -29,10 +28,29 @@ class Memory:
 
 
 @dataclass
+class Chunk:
+    memory_id: UUID
+    chunk_index: int
+    content: str
+    token_count: int
+    embedding: list[float] | None = None
+    id: UUID | None = None
+
+
+@dataclass
+class ChunkSearchResult:
+    chunk: Chunk
+    memory: Memory
+    similarity: float
+
+
+@dataclass
 class SearchResult:
     memory: Memory
     similarity: float
     score: float
+    chunk_content: str | None = None
+    chunk_id: UUID | None = None
 
 
 @dataclass

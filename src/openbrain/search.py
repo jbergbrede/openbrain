@@ -7,7 +7,7 @@ import asyncpg
 
 from .config import Settings
 from .embeddings import EmbeddingProvider
-from .models import Memory, SearchResult
+from .models import ChunkSearchResult, Memory, SearchResult
 from . import repository
 
 
@@ -30,6 +30,30 @@ def detect_low_spread(scores: list[float], threshold: float = 0.05) -> bool:
     return (max(scores) - min(scores)) < threshold
 
 
+def _promote_chunks_to_memories(
+    chunk_results: list[ChunkSearchResult],
+) -> list[SearchResult]:
+    """MAX similarity per memory; track top-scoring chunk per memory."""
+    best: dict[UUID, tuple[float, ChunkSearchResult]] = {}
+    for cr in chunk_results:
+        mid = cr.memory.id
+        if mid not in best or cr.similarity > best[mid][0]:
+            best[mid] = (cr.similarity, cr)
+
+    promoted = [
+        SearchResult(
+            memory=cr.memory,
+            similarity=sim,
+            score=sim,
+            chunk_content=cr.chunk.content,
+            chunk_id=cr.chunk.id,
+        )
+        for sim, cr in best.values()
+    ]
+    promoted.sort(key=lambda r: r.similarity, reverse=True)
+    return promoted
+
+
 def rrf_merge(
     semantic_results: list[SearchResult],
     keyword_results: list[SearchResult],
@@ -40,27 +64,34 @@ def rrf_merge(
     semantic_weight, keyword_weight = weights
     scores: dict[UUID, float] = {}
     memory_map: dict[UUID, Memory] = {}
+    chunk_map: dict[UUID, tuple[str | None, UUID | None]] = {}
 
     for rank, result in enumerate(semantic_results):
         mid = result.memory.id
         scores[mid] = scores.get(mid, 0.0) + semantic_weight / (k + rank + 1)
         memory_map[mid] = result.memory
+        chunk_map[mid] = (result.chunk_content, result.chunk_id)
 
     for rank, result in enumerate(keyword_results):
         mid = result.memory.id
         scores[mid] = scores.get(mid, 0.0) + keyword_weight / (k + rank + 1)
-        memory_map[mid] = result.memory
+        if mid not in memory_map:
+            memory_map[mid] = result.memory
+        # Don't overwrite chunk_map if semantic leg already set it
 
     for mid, memory in memory_map.items():
         conn_boost = 1.0 + len(memory.connections) * 0.01
         scores[mid] *= conn_boost
 
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    chunk_content, chunk_id = None, None
     return [
         SearchResult(
             memory=memory_map[mid],
             similarity=score,
             score=score,
+            chunk_content=chunk_map.get(mid, (None, None))[0],
+            chunk_id=chunk_map.get(mid, (None, None))[1],
         )
         for mid, score in ranked
     ]
@@ -80,12 +111,14 @@ async def hybrid_search(
         repository.keyword_search_memories(pool, query, limit=limit),
     )
 
-    semantic_results = await repository.search_memories(
+    chunk_results = await repository.search_chunks(
         pool=pool,
         embedding=embedding,
-        limit=limit,
+        limit=limit * 3,
         threshold=settings.search.similarity_threshold,
     )
+
+    semantic_results = _promote_chunks_to_memories(chunk_results)
 
     if settings.search.adaptive_weights and detect_low_spread(
         [r.similarity for r in semantic_results],

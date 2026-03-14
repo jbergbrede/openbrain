@@ -14,7 +14,6 @@ def make_mock_memory() -> Memory:
         content="Test content",
         created_at=datetime.now(timezone.utc),
         summary="Test summary",
-        embedding=[0.1] * 3,
         people=[],
         topics=["test"],
         action_items=[],
