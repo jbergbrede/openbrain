@@ -36,11 +36,23 @@ def create_slack_app(
             if not messages:
                 return
             message = messages[0]
-            content = message.get("text", "")
-            if not content:
-                return
             author = message.get("user", "unknown")
             thread_ts = message.get("thread_ts", ts)
+
+            if message.get("reply_count", 0) > 0:
+                # Thread root with replies → fetch and save entire thread
+                thread_result = await client.conversations_replies(
+                    channel=channel, ts=ts
+                )
+                thread_messages = thread_result.get("messages", [])
+                content = "\n\n".join(
+                    m.get("text", "") for m in thread_messages if m.get("text")
+                )
+            else:
+                content = message.get("text", "")
+
+            if not content:
+                return
             await save_memory(
                 pool=pool,
                 embedder=embedder,
