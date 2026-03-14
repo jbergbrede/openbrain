@@ -41,7 +41,7 @@ def create_mcp_server(
 
     @mcp.tool()
     async def save_memory(content: str) -> dict:
-        """Capture a thought or note. Enriches with metadata and stores in memory."""
+        """Save something to the user's personal memory store. Use when the user wants to remember something — a note, event, invoice, conversation, decision, or any personal information. Automatically enriches with metadata (people, topics, summary)."""
         memory = await pipeline_save(
             pool=pool,
             embedder=embedder,
@@ -53,7 +53,7 @@ def create_mcp_server(
 
     @mcp.tool()
     async def search_memories(query: str, limit: int = 10, debug: bool = False) -> dict:
-        """Hybrid search over memories (semantic + keyword). Returns matches with connection IDs (not content). Set debug=true for explainability info."""
+        """Search the user's personal memory store using hybrid semantic + keyword search. Use this proactively whenever the user asks about anything personal — past events, people, places, finances, appointments, invoices, health, travel, or any information they may have previously stored. Returns matching memories. Set debug=true for explainability info."""
         outcome = await hybrid_search(
             pool=pool,
             embedder=embedder,
@@ -96,13 +96,14 @@ def create_mcp_server(
                 "initial_weights": {"semantic": debug_info.weights[0], "keyword": debug_info.weights[1]},
                 "low_spread_detected": debug_info.low_spread_detected,
                 "semantic_hits": debug_info.semantic_hits,
+                "top_semantic_below_threshold": debug_info.top_semantic_below_threshold,
                 "keyword_hits": debug_info.keyword_hits,
             },
         }
 
     @mcp.tool()
     async def get_memory(id: str) -> dict | None:
-        """Fetch a specific memory by ID. Use to follow connections."""
+        """Fetch the full content of a specific memory by its ID. Use to retrieve complete details after finding a memory via search, or to follow connection IDs returned by other tools."""
         memory = await repo_get_memory(pool, UUID(id))
         if memory is None:
             return None
@@ -115,7 +116,7 @@ def create_mcp_server(
         filter_topics: list[str] | None = None,
         filter_people: list[str] | None = None,
     ) -> list[dict]:
-        """Browse recent memories with optional topic/people filters."""
+        """Browse the user's most recent memories, optionally filtered by topic or person. Use when the user wants to see what's stored, review recent entries, or explore memories without a specific query in mind."""
         memories = await repo_list_memories(
             pool=pool,
             limit=limit,
@@ -127,7 +128,7 @@ def create_mcp_server(
 
     @mcp.tool()
     async def delete_memory(id: str) -> dict:
-        """Remove a memory by ID."""
+        """Permanently delete a memory by ID. Use when the user asks to forget or remove something from their memory store."""
         deleted = await repo_delete_memory(pool, UUID(id))
         return {"deleted": deleted, "id": id}
 

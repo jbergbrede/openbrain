@@ -105,6 +105,7 @@ class SearchDebugInfo:
     low_spread_detected: bool
     semantic_hits: list[dict] = field(default_factory=list)
     keyword_hits: list[dict] = field(default_factory=list)
+    top_semantic_below_threshold: dict | None = None
 
 
 async def hybrid_search(
@@ -122,14 +123,29 @@ async def hybrid_search(
         repository.keyword_search_memories(pool, query, limit=limit),
     )
 
-    chunk_results = await repository.search_chunks(
+    # In debug mode, fetch all results to find top below-threshold
+    threshold_for_query = 0.0 if debug else settings.search.similarity_threshold
+    all_chunk_results = await repository.search_chunks(
         pool=pool,
         embedding=embedding,
         limit=limit * 3,
-        threshold=settings.search.similarity_threshold,
+        threshold=threshold_for_query,
     )
 
+    # Filter to threshold for actual results
+    chunk_results = [r for r in all_chunk_results if r.similarity >= settings.search.similarity_threshold]
     semantic_results = _promote_chunks_to_memories(chunk_results)
+
+    # For debug: find top result even if below threshold
+    top_below_threshold = None
+    if debug and not semantic_results and all_chunk_results:
+        best = max(all_chunk_results, key=lambda r: r.similarity)
+        top_below_threshold = {
+            "memory_id": str(best.memory.id),
+            "similarity": round(best.similarity, 4),
+            "chunk_content": (best.chunk.content or "")[:120],
+            "threshold": round(settings.search.similarity_threshold, 4),
+        }
 
     low_spread = settings.search.adaptive_weights and detect_low_spread(
         [r.similarity for r in semantic_results],
@@ -175,5 +191,6 @@ async def hybrid_search(
             }
             for r in keyword_results
         ],
+        top_semantic_below_threshold=top_below_threshold,
     )
     return results, debug_info
