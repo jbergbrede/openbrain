@@ -72,6 +72,8 @@ def create_mcp_server(
                 "similarity": r.similarity,
                 "score": r.score,
                 "created_at": r.memory.created_at.isoformat(),
+                "matched_chunk": r.chunk_content,
+                "chunk_id": str(r.chunk_id) if r.chunk_id else None,
             }
             for r in results
         ]
