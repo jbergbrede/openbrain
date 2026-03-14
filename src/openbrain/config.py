@@ -29,6 +29,11 @@ class ConnectionConfig(BaseModel):
 
 class SlackConfig(BaseModel):
     retrieval_result_limit: int = 5
+    paperless_channel_id: str = ""
+
+
+class PaperlessConfig(BaseModel):
+    base_url: str = ""
 
 
 class Settings(BaseSettings):
@@ -38,12 +43,14 @@ class Settings(BaseSettings):
     postgres_dsn: str = "postgresql://openbrain:openbrain@localhost:5432/openbrain"
     slack_bot_token: str = ""
     slack_app_token: str = ""
+    paperless_api_token: str = ""
 
     # Non-secret settings (can also come from YAML)
     embedding: EmbeddingConfig = EmbeddingConfig()
     search: SearchConfig = SearchConfig()
     connection_finding: ConnectionConfig = ConnectionConfig()
     slack: SlackConfig = SlackConfig()
+    paperless: PaperlessConfig = PaperlessConfig()
 
     model_config = {
         "env_prefix": "",

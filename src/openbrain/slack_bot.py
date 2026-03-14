@@ -10,8 +10,9 @@ from slack_sdk.errors import SlackApiError
 
 from .config import Settings
 from .embeddings import EmbeddingProvider
+from .paperless import fetch_paperless_document
 from .pipeline import save_memory
-from .repository import delete_memory, find_memory_by_slack_ts
+from .repository import delete_memory, find_memory_by_paperless_id, find_memory_by_slack_ts
 from .search import hybrid_search
 from .synthesis import synthesize
 from .transcribe import is_audio_file, transcribe_slack_file
@@ -137,6 +138,56 @@ def create_slack_app(
         )
         return True
 
+    async def handle_paperless_message(event, client, logger):
+        channel = event["channel"]
+        ts = event["ts"]
+        subtype = event.get("subtype")
+        if subtype and subtype != "bot_message":
+            return
+        text = event.get("text", "")
+        m = re.search(r"/documents/(\d+)/", text)
+        if not m:
+            log.debug("Paperless channel message has no [id:N] token, skipping")
+            return
+        doc_id = int(m.group(1))
+        await mark_processing(client, channel, ts)
+        try:
+            doc = await fetch_paperless_document(settings.paperless.base_url, settings.paperless_api_token, doc_id)
+            content_parts = []
+            if doc["title"]:
+                content_parts.append(f"Title: {doc['title']}")
+            if doc["correspondent"]:
+                content_parts.append(f"Correspondent: {doc['correspondent']}")
+            if doc["tags"]:
+                content_parts.append(f"Tags: {', '.join(doc['tags'])}")
+            if doc["content"]:
+                content_parts.append(doc["content"])
+            content = "\n".join(content_parts)
+            if not content.strip():
+                await mark_error(client, channel, ts)
+                return
+            source_metadata = {
+                "paperless_document_id": doc_id,
+                "paperless_title": doc["title"],
+                "paperless_correspondent": doc["correspondent"],
+                "paperless_tags": doc["tags"],
+            }
+            existing_id = await find_memory_by_paperless_id(pool, doc_id)
+            if existing_id:
+                await delete_memory(pool, existing_id)
+            await save_memory(
+                pool=pool,
+                embedder=embedder,
+                settings=settings,
+                content=content,
+                source="paperless",
+                source_metadata=source_metadata,
+            )
+            await mark_done(client, channel, ts)
+        except Exception as e:
+            logger.error(f"Failed to capture Paperless document {doc_id}: {e}")
+            await mark_error(client, channel, ts)
+
     @app.event("reaction_added")
     async def handle_reaction(event, client, logger):
         if event.get("reaction") != "brain":
@@ -184,6 +235,8 @@ def create_slack_app(
 
     @app.event("message")
     async def handle_dm(event, client, logger):
+        if settings.slack.paperless_channel_id and event.get("channel") == settings.slack.paperless_channel_id:
+            return await handle_paperless_message(event, client, logger)
         if event.get("channel_type") != "im":
             return
         if event.get("subtype") and event.get("subtype") != "file_share":
