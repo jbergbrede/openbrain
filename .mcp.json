@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "openbrain": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "openbrain",
+        "--mode",
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

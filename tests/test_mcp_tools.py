@@ -1,11 +1,12 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from openbrain.config import Settings
-from openbrain.models import Memory
 from openbrain.mcp_server import create_mcp_server
+from openbrain.models import Memory
 
 
 def make_mock_memory() -> Memory:
@@ -14,7 +15,6 @@ def make_mock_memory() -> Memory:
         content="Test content",
         created_at=datetime.now(timezone.utc),
         summary="Test summary",
-        embedding=[0.1] * 3,
         people=[],
         topics=["test"],
         action_items=[],

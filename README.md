@@ -173,3 +173,18 @@ Search ranking: `similarity × (1 + connection_count)` — well-connected "hub" 
 uv run pytest tests/test_enrichment.py tests/test_mcp_tools.py   # unit tests (no Docker)
 uv run pytest tests/test_repository.py                            # integration tests (requires Docker)
 ```
+
+### Linting
+
+[Ruff](https://docs.astral.sh/ruff/) is used for linting and formatting. Install the pre-commit hook once after cloning:
+
+```bash
+uv run pre-commit install
+```
+
+Ruff will then run automatically on every commit. To run manually:
+
+```bash
+uv run ruff check src/ tests/   # lint
+uv run ruff format src/ tests/  # format
+```

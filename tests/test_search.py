@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from openbrain.models import Memory, SearchResult
-from openbrain.search import detect_low_spread, get_weights, hybrid_search, rrf_merge
+import pytest
+
+from openbrain.models import Chunk, ChunkSearchResult, Memory, SearchResult
+from openbrain.search import (
+    _promote_chunks_to_memories,
+    detect_low_spread,
+    get_weights,
+    hybrid_search,
+    rrf_merge,
+)
 
 
 def make_memory(**kwargs) -> Memory:
@@ -15,7 +22,6 @@ def make_memory(**kwargs) -> Memory:
         content="Test memory content",
         created_at=datetime.now(timezone.utc),
         summary="A test summary",
-        embedding=[0.1] * 1536,
         people=[],
         topics=["testing"],
         action_items=[],
@@ -36,6 +42,7 @@ def make_result(memory: Memory | None = None, similarity: float = 0.8) -> Search
 
 
 # --- Unit: get_weights ---
+
 
 def test_get_weights_short_query():
     s, k = get_weights("Telekom")
@@ -63,6 +70,7 @@ def test_get_weights_long_query():
 
 # --- Unit: detect_low_spread ---
 
+
 def test_detect_low_spread_empty():
     assert detect_low_spread([]) is False
 
@@ -85,6 +93,7 @@ def test_detect_low_spread_exactly_at_threshold():
 
 
 # --- Unit: rrf_merge ---
+
 
 def test_rrf_merge_combines_results():
     m1 = make_memory(content="alpha")
@@ -138,10 +147,11 @@ def test_rrf_merge_deduplicates():
 
 # --- Integration: hybrid_search ---
 
+
 @pytest.mark.asyncio
 async def test_hybrid_search_integration(pool):
-    """Insert bilingual memories and verify hybrid search finds them."""
-    from openbrain.repository import insert_memory
+    """Insert bilingual memories + chunks and verify hybrid search finds them."""
+    from openbrain.repository import insert_chunks, insert_memory
 
     en_mem = make_memory(
         content="Deutsche Telekom monthly invoice 49.99 EUR",
@@ -155,13 +165,20 @@ async def test_hybrid_search_integration(pool):
         content_english="I paid my invoice",
         content_german="Ich habe meine Rechnung bezahlt",
     )
-    await insert_memory(pool, en_mem)
-    await insert_memory(pool, de_mem)
+    en_id = await insert_memory(pool, en_mem)
+    de_id = await insert_memory(pool, de_mem)
 
-    from openbrain.config import Settings
+    embedding = [0.1] * 1536
+    async with pool.acquire() as conn:
+        await insert_chunks(
+            conn,
+            [
+                Chunk(memory_id=en_id, chunk_index=0, content=en_mem.content, token_count=8, embedding=embedding),
+                Chunk(memory_id=de_id, chunk_index=0, content=de_mem.content, token_count=6, embedding=embedding),
+            ],
+        )
+
     from openbrain.repository import keyword_search_memories
-
-    settings = Settings()
 
     # Short keyword query — should find both via keyword
     kw_results = await keyword_search_memories(pool, "Telekom", limit=10)
@@ -171,14 +188,14 @@ async def test_hybrid_search_integration(pool):
     # German keyword — should match English memory via German translation in search_vector
     de_results = await keyword_search_memories(pool, "Rechnung", limit=10)
     de_ids = [r.memory.id for r in de_results]
-    assert en_mem.id in de_ids or de_mem.id in de_ids
+    assert en_id in de_ids or de_id in de_ids
 
 
 @pytest.mark.asyncio
 async def test_hybrid_search_keyword_fallback_on_low_spread(pool):
     """When semantic scores cluster, hybrid falls back to keyword-only weighting."""
-    from openbrain.repository import insert_memory
-    from openbrain.config import Settings, SearchConfig
+    from openbrain.config import SearchConfig, Settings
+    from openbrain.repository import insert_chunks, insert_memory
 
     mem = make_memory(
         content="INV-2026-0847 invoice number unique",
@@ -186,11 +203,22 @@ async def test_hybrid_search_keyword_fallback_on_low_spread(pool):
         content_english="INV-2026-0847 invoice number unique",
         content_german=None,
     )
-    await insert_memory(pool, mem)
+    mem_id = await insert_memory(pool, mem)
+
+    identical_embedding = [0.1] * 1536
+    async with pool.acquire() as conn:
+        await insert_chunks(
+            conn,
+            [
+                Chunk(
+                    memory_id=mem_id, chunk_index=0, content=mem.content, token_count=5, embedding=identical_embedding
+                ),
+            ],
+        )
 
     mock_embedder = MagicMock()
     # Return identical embeddings so semantic scores will cluster
-    mock_embedder.embed = AsyncMock(return_value=[0.1] * 1536)
+    mock_embedder.embed = AsyncMock(return_value=identical_embedding)
 
     settings = Settings(
         openai_api_key="fake",
@@ -212,3 +240,51 @@ async def test_hybrid_search_keyword_fallback_on_low_spread(pool):
     )
     # Should return results (keyword leg fires even if semantic is low-signal)
     assert isinstance(results, list)
+
+
+# --- Unit: _promote_chunks_to_memories ---
+
+
+def test_promote_chunks_max_similarity():
+    """Highest chunk similarity wins for each memory."""
+    mem = make_memory()
+    chunk_a = Chunk(memory_id=mem.id, chunk_index=0, content="first chunk", token_count=2)
+    chunk_b = Chunk(memory_id=mem.id, chunk_index=1, content="second chunk", token_count=2)
+
+    results = [
+        ChunkSearchResult(chunk=chunk_a, memory=mem, similarity=0.7),
+        ChunkSearchResult(chunk=chunk_b, memory=mem, similarity=0.9),
+    ]
+    promoted = _promote_chunks_to_memories(results)
+
+    assert len(promoted) == 1
+    assert promoted[0].similarity == 0.9
+    assert promoted[0].chunk_content == "second chunk"
+
+
+def test_promote_chunks_multiple_memories():
+    """Each memory gets its own promoted result."""
+    m1 = make_memory(content="memory one")
+    m2 = make_memory(content="memory two")
+    c1 = Chunk(memory_id=m1.id, chunk_index=0, content="chunk one", token_count=2)
+    c2 = Chunk(memory_id=m2.id, chunk_index=0, content="chunk two", token_count=2)
+
+    results = [
+        ChunkSearchResult(chunk=c1, memory=m1, similarity=0.8),
+        ChunkSearchResult(chunk=c2, memory=m2, similarity=0.6),
+    ]
+    promoted = _promote_chunks_to_memories(results)
+
+    assert len(promoted) == 2
+    assert promoted[0].memory.id == m1.id  # sorted by similarity desc
+
+
+def test_rrf_merge_carries_chunk_content():
+    """chunk_content from semantic leg is preserved in merged results."""
+    m = make_memory()
+    semantic = [SearchResult(memory=m, similarity=0.9, score=0.9, chunk_content="relevant snippet", chunk_id=None)]
+    keyword = [SearchResult(memory=m, similarity=0.8, score=0.8)]
+
+    merged = rrf_merge(semantic, keyword, weights=(0.5, 0.5), k=60)
+    assert len(merged) == 1
+    assert merged[0].chunk_content == "relevant snippet"
