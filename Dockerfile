@@ -1,12 +1,15 @@
 FROM python:3.12-slim
 
-RUN pip install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --no-dev --frozen
 
-COPY . .
+COPY src/ ./src/
+COPY migrations/ ./migrations/
 
-CMD ["uv", "run", "openbrain", "--mode", "mcp"]
+ENV MODE=slack
+
+CMD ["sh", "-c", "uv run openbrain --mode $MODE"]

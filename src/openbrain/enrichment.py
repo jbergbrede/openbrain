@@ -63,6 +63,7 @@ async def enrich(content: str, existing_topics: list[str]) -> EnrichmentResult:
         options=ClaudeAgentOptions(
             output_format={"type": "json_object"},
             max_turns=1,
+            model="haiku",
         ),
     ):
         if isinstance(message, ResultMessage):
