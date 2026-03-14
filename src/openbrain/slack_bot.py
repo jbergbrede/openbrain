@@ -206,7 +206,11 @@ def create_slack_app(
         file_meta = [
             {"id": f.get("id"), "name": f.get("name"), "mime": f.get("mimetype")} for f in event.get("files", [])
         ]
-        log.info(f"handle_dm: subtype={event.get('subtype')} files={file_meta}")
+        attachment_meta = [
+            {"file_ids": a.get("file_ids"), "files": [f.get("id") for f in a.get("files", [])]}
+            for a in event.get("attachments", [])
+        ]
+        log.info("handle_dm: subtype=%s files=%s attachments=%s", event.get("subtype"), file_meta, attachment_meta)
         await mark_processing(client, channel, ts)
         try:
             content, extra_meta = await build_message_content(client, event)
