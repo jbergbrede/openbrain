@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0; MAIN_ROOT=$(dirname \"$GIT_COMMON\"); [ \"$MAIN_ROOT\" = \".\" ] && exit 0; ENV_SRC=\"$MAIN_ROOT/.env\"; ENV_DST=\"$(pwd)/.env\"; [ -f \"$ENV_SRC\" ] && [ ! -e \"$ENV_DST\" ] && ln -s \"$ENV_SRC\" \"$ENV_DST\"'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(uv run:*)",
+      "mcp__openbrain__list_memories",
+      "mcp__openbrain__search_memories",
+      "mcp__openbrain__get_memory",
+      "mcp__openbrain__save_memory"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "openbrain"
+  ]
+}

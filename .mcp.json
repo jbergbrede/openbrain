@@ -5,7 +5,7 @@
       "command": "sh",
       "args": [
         "-c",
-        "uv --directory $(git rev-parse --show-toplevel) run openbrain --mode mcp"
+        "uv --directory $(dirname $(git rev-parse --git-common-dir)) run openbrain --mode mcp"
       ],
       "env": {}
     }
