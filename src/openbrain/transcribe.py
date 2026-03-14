@@ -66,11 +66,20 @@ async def transcribe_slack_file(
     url = file_info.get("url_private_download") or file_info.get("url_private")
     filename = _whisper_filename(file_info)
 
+    import logging
+
+    log = logging.getLogger(__name__)
+
     headers = {"Authorization": f"Bearer {bot_token}"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             resp.raise_for_status()
             audio_bytes = await resp.read()
+            log.info(
+                f"Downloaded {len(audio_bytes)} bytes, "
+                f"status={resp.status}, content-type={resp.content_type}, "
+                f"first_bytes={audio_bytes[:8].hex()}"
+            )
 
     client = AsyncOpenAI(api_key=openai_api_key)
     audio_file = io.BytesIO(audio_bytes)
