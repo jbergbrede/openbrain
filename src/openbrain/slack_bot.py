@@ -111,7 +111,7 @@ def create_slack_app(
         user = event.get("user", "unknown")
         try:
             if content.startswith("?"):
-                await handle_retrieval(content[1:].strip(), client, channel, thread_ts=ts)
+                await handle_retrieval(content[1:].strip(), client, channel, thread_ts=None)
             else:
                 await save_memory(
                     pool=pool,
