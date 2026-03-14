@@ -68,6 +68,13 @@ def create_slack_app(
         if not settings.openai_api_key:
             return None
         for f in message.get("files", []):
+            log.info(
+                "Checking file: id=%s name=%s mime=%s is_audio=%s",
+                f.get("id"),
+                f.get("name"),
+                f.get("mimetype"),
+                is_audio_file(f),
+            )
             if is_audio_file(f):
                 # Event file objects are partial; fetch full file info for a working download URL
                 log.info(f"Audio file detected: id={f.get('id')} name={f.get('name')} mime={f.get('mimetype')}")
@@ -196,10 +203,16 @@ def create_slack_app(
                 logger.error(f"Failed to handle DM retrieval: {e}")
             return
 
+        file_meta = [
+            {"id": f.get("id"), "name": f.get("name"), "mime": f.get("mimetype")} for f in event.get("files", [])
+        ]
+        log.info(f"handle_dm: subtype={event.get('subtype')} files={file_meta}")
         await mark_processing(client, channel, ts)
         try:
             content, extra_meta = await build_message_content(client, event)
+            log.info(f"build_message_content: content_len={len(content)} extra_meta={extra_meta}")
             if not content:
+                await mark_error(client, channel, ts)
                 return
             await save_memory(
                 pool=pool,
