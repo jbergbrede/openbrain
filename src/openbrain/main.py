@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
+import logging
 import signal
 import sys
-import logging
-import argparse
+
+import nltk
 
 from .config import load_config
 from .db import close_pool, get_pool
 from .embeddings import get_embedder
+
+nltk.download("stopwords", quiet=True)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,12 +32,14 @@ def parse_args() -> argparse.Namespace:
 
 async def run_mcp(pool, embedder, settings) -> None:
     from .mcp_server import create_mcp_server
+
     mcp = create_mcp_server(pool, embedder, settings)
     await mcp.run_async(transport="stdio")
 
 
 async def run_slack(pool, embedder, settings) -> None:
     from .slack_bot import create_slack_app
+
     _, handler = create_slack_app(pool, embedder, settings)
     logger.info("Starting Slack bot in socket mode")
     try:
@@ -56,10 +62,13 @@ async def async_main(mode: str, config_path: str | None) -> None:
         logger.error("Postgres connection failed: %s", e)
         raise
 
-    embedder = get_embedder(settings.embedding, {
-        "openai_api_key": settings.openai_api_key,
-        "google_api_key": settings.google_api_key,
-    })
+    embedder = get_embedder(
+        settings.embedding,
+        {
+            "openai_api_key": settings.openai_api_key,
+            "google_api_key": settings.google_api_key,
+        },
+    )
     logger.info("Embedder: %s / %s", settings.embedding.provider, settings.embedding.model)
 
     try:

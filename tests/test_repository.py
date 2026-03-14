@@ -1,16 +1,18 @@
-import pytest
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from openbrain.models import Memory, ActionItem
+import pytest
+
+from openbrain.models import Chunk, Memory
 from openbrain.repository import (
-    insert_memory,
-    get_memory,
-    list_memories,
     delete_memory,
     get_distinct_topics,
+    get_memory,
+    insert_chunks,
+    insert_memory,
+    list_memories,
+    search_chunks,
     update_connections,
-    insert_memory_with_conn,
 )
 
 
@@ -20,7 +22,6 @@ def make_memory(**kwargs) -> Memory:
         content="Test memory content",
         created_at=datetime.now(timezone.utc),
         summary="A test summary",
-        embedding=[0.1] * 1536,
         people=[],
         topics=["testing"],
         action_items=[],
@@ -99,7 +100,8 @@ async def test_bidirectional_connections(pool):
             # When saving B, connect to A, and update A's connections array
             await conn.execute(
                 "UPDATE memories SET connections = array_append(connections, $1::uuid) WHERE id = $2",
-                str(id_a), str(id_b),
+                str(id_a),
+                str(id_b),
             )
             await update_connections(conn, id_b, [id_a])
 
@@ -108,3 +110,64 @@ async def test_bidirectional_connections(pool):
 
     assert id_b in fetched_a.connections
     assert id_a in fetched_b.connections
+
+
+@pytest.mark.asyncio
+async def test_insert_chunks_and_search_chunks(pool):
+    mem = make_memory(content="Chunking test memory about vector embeddings")
+    mem_id = await insert_memory(pool, mem)
+
+    embedding = [0.1] * 1536
+    async with pool.acquire() as conn:
+        await insert_chunks(
+            conn,
+            [
+                Chunk(
+                    memory_id=mem_id, chunk_index=0, content="Chunking test memory", token_count=4, embedding=embedding
+                ),
+                Chunk(
+                    memory_id=mem_id,
+                    chunk_index=1,
+                    content="about vector embeddings",
+                    token_count=4,
+                    embedding=embedding,
+                ),
+            ],
+        )
+
+    results = await search_chunks(pool, embedding=embedding, limit=10, threshold=0.0)
+    memory_ids = [r.memory.id for r in results]
+    assert mem_id in memory_ids
+
+    # Verify chunk content is returned
+    mem_results = [r for r in results if r.memory.id == mem_id]
+    assert len(mem_results) >= 1
+    assert mem_results[0].chunk.content in ("Chunking test memory", "about vector embeddings")
+
+
+@pytest.mark.asyncio
+async def test_cascade_delete_chunks(pool):
+    mem = make_memory(content="Memory that will be deleted")
+    mem_id = await insert_memory(pool, mem)
+
+    async with pool.acquire() as conn:
+        await insert_chunks(
+            conn,
+            [
+                Chunk(
+                    memory_id=mem_id, chunk_index=0, content="will be deleted", token_count=3, embedding=[0.2] * 1536
+                ),
+            ],
+        )
+
+    # Verify chunk exists
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM chunks WHERE memory_id = $1", str(mem_id))
+    assert count == 1
+
+    await delete_memory(pool, mem_id)
+
+    # Chunk should be gone via CASCADE
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM chunks WHERE memory_id = $1", str(mem_id))
+    assert count == 0

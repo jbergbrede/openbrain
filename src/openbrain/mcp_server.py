@@ -30,8 +30,7 @@ def create_mcp_server(
             "people": memory.people,
             "topics": memory.topics,
             "action_items": [
-                {"text": ai.text, "status": ai.status, "due_date": ai.due_date}
-                for ai in memory.action_items
+                {"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items
             ],
             "connections": [str(c) for c in memory.connections],
             "source": memory.source,
@@ -41,7 +40,7 @@ def create_mcp_server(
 
     @mcp.tool()
     async def save_memory(content: str) -> dict:
-        """Capture a thought or note. Enriches with metadata and stores in memory."""
+        """Save something to the user's personal memory store. Use when the user wants to remember something — a note, event, invoice, conversation, decision, or any personal information. Automatically enriches with metadata (people, topics, summary)."""  # noqa: E501
         memory = await pipeline_save(
             pool=pool,
             embedder=embedder,
@@ -52,16 +51,22 @@ def create_mcp_server(
         return _memory_dict(memory)
 
     @mcp.tool()
-    async def search_memories(query: str, limit: int = 10) -> list[dict]:
-        """Hybrid search over memories (semantic + keyword). Returns matches with connection IDs (not content)."""
-        results = await hybrid_search(
+    async def search_memories(query: str, limit: int = 10, debug: bool = False) -> dict:
+        """Search the user's personal memory store using hybrid semantic + keyword search. Use this proactively whenever the user asks about anything personal — past events, people, places, finances, appointments, invoices, health, travel, or any information they may have previously stored. Returns matching memories. Set debug=true for explainability info."""  # noqa: E501
+        outcome = await hybrid_search(
             pool=pool,
             embedder=embedder,
             query=query,
             settings=settings,
             limit=limit,
+            debug=debug,
         )
-        return [
+        if debug:
+            results, debug_info = outcome
+        else:
+            results = outcome
+
+        hits = [
             {
                 "id": str(r.memory.id),
                 "content": r.memory.content,
@@ -72,13 +77,38 @@ def create_mcp_server(
                 "similarity": r.similarity,
                 "score": r.score,
                 "created_at": r.memory.created_at.isoformat(),
+                "matched_chunk": r.chunk_content,
+                "chunk_id": str(r.chunk_id) if r.chunk_id else None,
             }
             for r in results
         ]
 
+        if not debug:
+            return {"results": hits}
+
+        return {
+            "results": hits,
+            "debug": {
+                "query": debug_info.query,
+                "similarity_threshold": settings.search.similarity_threshold,
+                "weights": {
+                    "semantic": debug_info.effective_weights[0],
+                    "keyword": debug_info.effective_weights[1],
+                },
+                "initial_weights": {
+                    "semantic": debug_info.weights[0],
+                    "keyword": debug_info.weights[1],
+                },
+                "low_spread_detected": debug_info.low_spread_detected,
+                "semantic_hits": debug_info.semantic_hits,
+                "top_semantic_below_threshold": debug_info.top_semantic_below_threshold,
+                "keyword_hits": debug_info.keyword_hits,
+            },
+        }
+
     @mcp.tool()
     async def get_memory(id: str) -> dict | None:
-        """Fetch a specific memory by ID. Use to follow connections."""
+        """Fetch the full content of a specific memory by its ID. Use to retrieve complete details after finding a memory via search, or to follow connection IDs returned by other tools."""  # noqa: E501
         memory = await repo_get_memory(pool, UUID(id))
         if memory is None:
             return None
@@ -91,7 +121,7 @@ def create_mcp_server(
         filter_topics: list[str] | None = None,
         filter_people: list[str] | None = None,
     ) -> list[dict]:
-        """Browse recent memories with optional topic/people filters."""
+        """Browse the user's most recent memories, optionally filtered by topic or person. Use when the user wants to see what's stored, review recent entries, or explore memories without a specific query in mind."""  # noqa: E501
         memories = await repo_list_memories(
             pool=pool,
             limit=limit,
@@ -103,7 +133,7 @@ def create_mcp_server(
 
     @mcp.tool()
     async def delete_memory(id: str) -> dict:
-        """Remove a memory by ID."""
+        """Permanently delete a memory by ID. Use when the user asks to forget or remove something from their memory store."""  # noqa: E501
         deleted = await repo_delete_memory(pool, UUID(id))
         return {"deleted": deleted, "id": id}
 

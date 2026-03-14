@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 from .models import ActionItem, EnrichmentResult
 
@@ -25,9 +25,7 @@ Return ONLY a JSON object with these exact keys. No markdown, no explanation.\
 
 def _build_prompt(content: str, existing_topics: list[str]) -> str:
     topics_hint = (
-        f"\n\nExisting topics to reuse where applicable: {', '.join(existing_topics)}"
-        if existing_topics
-        else ""
+        f"\n\nExisting topics to reuse where applicable: {', '.join(existing_topics)}" if existing_topics else ""
     )
     return SYSTEM_PROMPT + "\n\n" + content + topics_hint
 
