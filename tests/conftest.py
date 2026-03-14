@@ -1,6 +1,4 @@
-import asyncio
 import pytest
-import asyncpg
 from testcontainers.postgres import PostgresContainer
 
 
@@ -12,7 +10,8 @@ def postgres_container():
 
 @pytest.fixture(scope="session")
 async def pool(postgres_container):
-    from openbrain.db import get_pool, close_pool
+    from openbrain.db import close_pool, get_pool
+
     dsn = postgres_container.get_connection_url().replace("psycopg2", "asyncpg").replace("+asyncpg", "")
     p = await get_pool(dsn)
     yield p

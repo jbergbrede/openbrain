@@ -28,6 +28,12 @@ openbrain = "openbrain.main:main"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
 [build-system]
 requires = ["uv_build>=0.8.13,<0.9.0"]
 build-backend = "uv_build"
@@ -36,5 +42,6 @@ build-backend = "uv_build"
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "ruff>=0.15.6",
     "testcontainers[postgres]>=4.14.1",
 ]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 
@@ -48,16 +47,10 @@ async def run_migrations(pool: asyncpg.Pool) -> None:
 
         applied = {row["filename"] for row in await conn.fetch("SELECT filename FROM _migrations")}
 
-        migration_files = sorted(
-            f for f in MIGRATIONS_DIR.glob("*.sql")
-            if re.match(r"^\d+_", f.name)
-        )
+        migration_files = sorted(f for f in MIGRATIONS_DIR.glob("*.sql") if re.match(r"^\d+_", f.name))
 
         for migration_file in migration_files:
             if migration_file.name not in applied:
                 sql = migration_file.read_text()
                 await conn.execute(sql)
-                await conn.execute(
-                    "INSERT INTO _migrations (filename) VALUES ($1)",
-                    migration_file.name
-                )
+                await conn.execute("INSERT INTO _migrations (filename) VALUES ($1)", migration_file.name)

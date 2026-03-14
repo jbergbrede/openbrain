@@ -1,9 +1,10 @@
 import json
-import pytest
-from unittest.mock import MagicMock, patch
 from typing import AsyncGenerator
+from unittest.mock import MagicMock, patch
 
+import pytest
 from claude_agent_sdk import ResultMessage
+
 from openbrain.enrichment import enrich
 from openbrain.models import EnrichmentResult
 
@@ -20,12 +21,14 @@ def _make_query_mock(json_data: dict):
 
 @pytest.mark.asyncio
 async def test_enrich_parses_response():
-    mock_query = _make_query_mock({
-        "summary": "A test summary",
-        "people": ["Alice", "Bob"],
-        "topics": ["testing", "python"],
-        "action_items": [{"text": "Write tests", "due_date": None}],
-    })
+    mock_query = _make_query_mock(
+        {
+            "summary": "A test summary",
+            "people": ["Alice", "Bob"],
+            "topics": ["testing", "python"],
+            "action_items": [{"text": "Write tests", "due_date": None}],
+        }
+    )
     with patch("openbrain.enrichment.query", new=mock_query):
         result = await enrich(
             content="Met with Alice and Bob about testing Python code.",
@@ -42,12 +45,14 @@ async def test_enrich_parses_response():
 
 @pytest.mark.asyncio
 async def test_enrich_handles_empty_fields():
-    mock_query = _make_query_mock({
-        "summary": "Just a thought",
-        "people": [],
-        "topics": ["general"],
-        "action_items": [],
-    })
+    mock_query = _make_query_mock(
+        {
+            "summary": "Just a thought",
+            "people": [],
+            "topics": ["general"],
+            "action_items": [],
+        }
+    )
     with patch("openbrain.enrichment.query", new=mock_query):
         result = await enrich(
             content="Just a random thought",

@@ -40,7 +40,13 @@ class Settings(BaseSettings):
     search: SearchConfig = SearchConfig()
     connection_finding: ConnectionConfig = ConnectionConfig()
 
-    model_config = {"env_prefix": "", "env_nested_delimiter": "__", "env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config = {
+        "env_prefix": "",
+        "env_nested_delimiter": "__",
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 def load_config(config_path: str | Path | None = None) -> Settings:

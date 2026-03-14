@@ -1,18 +1,18 @@
-import pytest
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from openbrain.models import Chunk, Memory, ActionItem
+import pytest
+
+from openbrain.models import Chunk, Memory
 from openbrain.repository import (
-    insert_chunks,
-    insert_memory,
-    get_memory,
-    list_memories,
     delete_memory,
     get_distinct_topics,
+    get_memory,
+    insert_chunks,
+    insert_memory,
+    list_memories,
     search_chunks,
     update_connections,
-    insert_memory_with_conn,
 )
 
 
@@ -100,7 +100,8 @@ async def test_bidirectional_connections(pool):
             # When saving B, connect to A, and update A's connections array
             await conn.execute(
                 "UPDATE memories SET connections = array_append(connections, $1::uuid) WHERE id = $2",
-                str(id_a), str(id_b),
+                str(id_a),
+                str(id_b),
             )
             await update_connections(conn, id_b, [id_a])
 
@@ -118,10 +119,21 @@ async def test_insert_chunks_and_search_chunks(pool):
 
     embedding = [0.1] * 1536
     async with pool.acquire() as conn:
-        await insert_chunks(conn, [
-            Chunk(memory_id=mem_id, chunk_index=0, content="Chunking test memory", token_count=4, embedding=embedding),
-            Chunk(memory_id=mem_id, chunk_index=1, content="about vector embeddings", token_count=4, embedding=embedding),
-        ])
+        await insert_chunks(
+            conn,
+            [
+                Chunk(
+                    memory_id=mem_id, chunk_index=0, content="Chunking test memory", token_count=4, embedding=embedding
+                ),
+                Chunk(
+                    memory_id=mem_id,
+                    chunk_index=1,
+                    content="about vector embeddings",
+                    token_count=4,
+                    embedding=embedding,
+                ),
+            ],
+        )
 
     results = await search_chunks(pool, embedding=embedding, limit=10, threshold=0.0)
     memory_ids = [r.memory.id for r in results]
@@ -139,9 +151,14 @@ async def test_cascade_delete_chunks(pool):
     mem_id = await insert_memory(pool, mem)
 
     async with pool.acquire() as conn:
-        await insert_chunks(conn, [
-            Chunk(memory_id=mem_id, chunk_index=0, content="will be deleted", token_count=3, embedding=[0.2] * 1536),
-        ])
+        await insert_chunks(
+            conn,
+            [
+                Chunk(
+                    memory_id=mem_id, chunk_index=0, content="will be deleted", token_count=3, embedding=[0.2] * 1536
+                ),
+            ],
+        )
 
     # Verify chunk exists
     async with pool.acquire() as conn:

@@ -6,10 +6,10 @@ from uuid import UUID
 
 import asyncpg
 
+from . import repository
 from .config import Settings
 from .embeddings import EmbeddingProvider
 from .models import ChunkSearchResult, Memory, SearchResult
-from . import repository
 
 
 def get_weights(query: str) -> tuple[float, float]:

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
-from openbrain.chunker import RawChunk, chunk_content, count_tokens
+from openbrain.chunker import chunk_content, count_tokens
 
 
 def test_short_content_single_chunk():
@@ -25,10 +23,7 @@ def test_token_count_accuracy():
 
 
 def test_markdown_header_split():
-    text = (
-        "## Section One\n\n" + ("alpha " * 60) + "\n\n"
-        "## Section Two\n\n" + ("beta " * 60)
-    )
+    text = "## Section One\n\n" + ("alpha " * 60) + "\n\n## Section Two\n\n" + ("beta " * 60)
     chunks = chunk_content(text, max_tokens=100, short_threshold=10)
     assert len(chunks) >= 2
     # Section One content should appear in an early chunk

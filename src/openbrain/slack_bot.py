@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 
 import asyncpg
-from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
+from slack_bolt.async_app import AsyncApp
 from slack_sdk.errors import SlackApiError
 
 from .config import Settings
@@ -29,8 +29,7 @@ def create_slack_app(
 
     async def save_or_update_thread(channel, thread_ts, messages, author) -> bool:
         content = "\n\n".join(
-            re.sub(r"<@[A-Z0-9]+>\s*", "", m.get("text", "")).strip()
-            for m in messages if m.get("text")
+            re.sub(r"<@[A-Z0-9]+>\s*", "", m.get("text", "")).strip() for m in messages if m.get("text")
         )
         if not content:
             return False
@@ -38,8 +37,11 @@ def create_slack_app(
         if existing_id:
             await delete_memory(pool, existing_id)
         await save_memory(
-            pool=pool, embedder=embedder, settings=settings,
-            content=content, source="slack",
+            pool=pool,
+            embedder=embedder,
+            settings=settings,
+            content=content,
+            source="slack",
             source_metadata={"channel": channel, "thread_ts": thread_ts, "author": author},
         )
         return True
@@ -54,9 +56,7 @@ def create_slack_app(
         channel = item["channel"]
         ts = item["ts"]
         try:
-            result = await client.conversations_history(
-                channel=channel, latest=ts, limit=1, inclusive=True
-            )
+            result = await client.conversations_history(channel=channel, latest=ts, limit=1, inclusive=True)
             messages = result.get("messages", [])
             if not messages:
                 return
@@ -66,9 +66,7 @@ def create_slack_app(
 
             if message.get("reply_count", 0) > 0 or message.get("thread_ts"):
                 # thread root with replies OR a reply — fetch full thread, upsert
-                thread_result = await client.conversations_replies(
-                    channel=channel, ts=thread_ts
-                )
+                thread_result = await client.conversations_replies(channel=channel, ts=thread_ts)
                 saved = await save_or_update_thread(channel, thread_ts, thread_result.get("messages", []), author)
                 if saved:
                     await mark_done(client, channel, thread_ts)
@@ -78,8 +76,11 @@ def create_slack_app(
                 if not content:
                     return
                 await save_memory(
-                    pool=pool, embedder=embedder, settings=settings,
-                    content=content, source="slack",
+                    pool=pool,
+                    embedder=embedder,
+                    settings=settings,
+                    content=content,
+                    source="slack",
                     source_metadata={"channel": channel, "thread_ts": ts, "author": author},
                 )
                 await mark_done(client, channel, ts)
@@ -131,17 +132,18 @@ def create_slack_app(
                 if not content:
                     return
                 await save_memory(
-                    pool=pool, embedder=embedder, settings=settings,
-                    content=content, source="slack",
+                    pool=pool,
+                    embedder=embedder,
+                    settings=settings,
+                    content=content,
+                    source="slack",
                     source_metadata={"channel": channel, "thread_ts": ts, "author": user},
                 )
                 await mark_done(client, channel, ts)
                 return
             else:
                 # any thread mention → fetch full thread, upsert
-                result = await client.conversations_replies(
-                    channel=channel, ts=thread_ts
-                )
+                result = await client.conversations_replies(channel=channel, ts=thread_ts)
                 saved = await save_or_update_thread(channel, thread_ts, result.get("messages", []), user)
                 if saved:
                     await mark_done(client, channel, thread_ts)

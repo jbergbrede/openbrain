@@ -128,7 +128,4 @@ def chunk_content(
     with_overlap = _add_overlap(merged, overlap_tokens)
 
     enc = tiktoken.get_encoding("cl100k_base")
-    return [
-        RawChunk(index=i, content=text, token_count=len(enc.encode(text)))
-        for i, text in enumerate(with_overlap)
-    ]
+    return [RawChunk(index=i, content=text, token_count=len(enc.encode(text))) for i, text in enumerate(with_overlap)]

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
+
+import pytest
 
 from openbrain.models import Chunk, ChunkSearchResult, Memory, SearchResult
 from openbrain.search import (
@@ -42,6 +43,7 @@ def make_result(memory: Memory | None = None, similarity: float = 0.8) -> Search
 
 # --- Unit: get_weights ---
 
+
 def test_get_weights_short_query():
     s, k = get_weights("Telekom")
     assert s == 0.2
@@ -68,6 +70,7 @@ def test_get_weights_long_query():
 
 # --- Unit: detect_low_spread ---
 
+
 def test_detect_low_spread_empty():
     assert detect_low_spread([]) is False
 
@@ -90,6 +93,7 @@ def test_detect_low_spread_exactly_at_threshold():
 
 
 # --- Unit: rrf_merge ---
+
 
 def test_rrf_merge_combines_results():
     m1 = make_memory(content="alpha")
@@ -143,6 +147,7 @@ def test_rrf_merge_deduplicates():
 
 # --- Integration: hybrid_search ---
 
+
 @pytest.mark.asyncio
 async def test_hybrid_search_integration(pool):
     """Insert bilingual memories + chunks and verify hybrid search finds them."""
@@ -165,15 +170,15 @@ async def test_hybrid_search_integration(pool):
 
     embedding = [0.1] * 1536
     async with pool.acquire() as conn:
-        await insert_chunks(conn, [
-            Chunk(memory_id=en_id, chunk_index=0, content=en_mem.content, token_count=8, embedding=embedding),
-            Chunk(memory_id=de_id, chunk_index=0, content=de_mem.content, token_count=6, embedding=embedding),
-        ])
+        await insert_chunks(
+            conn,
+            [
+                Chunk(memory_id=en_id, chunk_index=0, content=en_mem.content, token_count=8, embedding=embedding),
+                Chunk(memory_id=de_id, chunk_index=0, content=de_mem.content, token_count=6, embedding=embedding),
+            ],
+        )
 
-    from openbrain.config import Settings
     from openbrain.repository import keyword_search_memories
-
-    settings = Settings()
 
     # Short keyword query — should find both via keyword
     kw_results = await keyword_search_memories(pool, "Telekom", limit=10)
@@ -189,8 +194,8 @@ async def test_hybrid_search_integration(pool):
 @pytest.mark.asyncio
 async def test_hybrid_search_keyword_fallback_on_low_spread(pool):
     """When semantic scores cluster, hybrid falls back to keyword-only weighting."""
+    from openbrain.config import SearchConfig, Settings
     from openbrain.repository import insert_chunks, insert_memory
-    from openbrain.config import Settings, SearchConfig
 
     mem = make_memory(
         content="INV-2026-0847 invoice number unique",
@@ -202,9 +207,14 @@ async def test_hybrid_search_keyword_fallback_on_low_spread(pool):
 
     identical_embedding = [0.1] * 1536
     async with pool.acquire() as conn:
-        await insert_chunks(conn, [
-            Chunk(memory_id=mem_id, chunk_index=0, content=mem.content, token_count=5, embedding=identical_embedding),
-        ])
+        await insert_chunks(
+            conn,
+            [
+                Chunk(
+                    memory_id=mem_id, chunk_index=0, content=mem.content, token_count=5, embedding=identical_embedding
+                ),
+            ],
+        )
 
     mock_embedder = MagicMock()
     # Return identical embeddings so semantic scores will cluster
@@ -233,6 +243,7 @@ async def test_hybrid_search_keyword_fallback_on_low_spread(pool):
 
 
 # --- Unit: _promote_chunks_to_memories ---
+
 
 def test_promote_chunks_max_similarity():
     """Highest chunk similarity wins for each memory."""

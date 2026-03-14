@@ -38,10 +38,7 @@ def _row_to_memory(row: asyncpg.Record) -> Memory:
 
 
 async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
-    action_items = [
-        {"text": ai.text, "status": ai.status, "due_date": ai.due_date}
-        for ai in memory.action_items
-    ]
+    action_items = [{"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items]
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -73,10 +70,7 @@ async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
 
 
 async def insert_memory_with_conn(conn: asyncpg.Connection, memory: Memory) -> UUID:
-    action_items = [
-        {"text": ai.text, "status": ai.status, "due_date": ai.due_date}
-        for ai in memory.action_items
-    ]
+    action_items = [{"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items]
 
     row = await conn.fetchrow(
         """
@@ -243,7 +237,7 @@ async def list_memories(
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            f"SELECT * FROM memories {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
+            f"SELECT * FROM memories {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *params,
         )
         return [_row_to_memory(row) for row in rows]
@@ -253,7 +247,8 @@ async def delete_memory(pool: asyncpg.Pool, memory_id: UUID) -> bool:
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
-                "UPDATE memories SET connections = array_remove(connections, $1::uuid) WHERE $1::uuid = ANY(connections)",
+                "UPDATE memories SET connections = array_remove(connections, $1::uuid)"
+                " WHERE $1::uuid = ANY(connections)",
                 str(memory_id),
             )
             result = await conn.execute(
@@ -273,9 +268,9 @@ async def keyword_search_memories(
     # German compound words (e.g. "Bundesautobahn") won't match a query for
     # "autobahn" with AND semantics, so we match permissively and let ts_rank
     # (computed against the original AND query) handle scoring.
-    or_query = " OR ".join(
-        w for w in query.split() if w and w.lower() not in _STOPWORDS
-    ) or query  # fallback to raw query if all tokens are stopwords
+    or_query = (
+        " OR ".join(w for w in query.split() if w and w.lower() not in _STOPWORDS) or query
+    )  # fallback to raw query if all tokens are stopwords
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -312,9 +307,7 @@ async def keyword_search_memories(
         ]
 
 
-async def update_connections(
-    conn: asyncpg.Connection, memory_id: UUID, connected_ids: list[UUID]
-) -> None:
+async def update_connections(conn: asyncpg.Connection, memory_id: UUID, connected_ids: list[UUID]) -> None:
     if not connected_ids:
         return
     for cid in connected_ids:
@@ -329,9 +322,7 @@ async def update_connections(
         )
 
 
-async def find_memory_by_slack_ts(
-    pool: asyncpg.Pool, channel: str, ts: str
-) -> UUID | None:
+async def find_memory_by_slack_ts(pool: asyncpg.Pool, channel: str, ts: str) -> UUID | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -356,7 +347,5 @@ async def link_memories(pool: asyncpg.Pool, id1: UUID, id2: UUID) -> None:
 
 async def get_distinct_topics(pool: asyncpg.Pool) -> list[str]:
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT DISTINCT unnest(topics) AS topic FROM memories ORDER BY topic"
-        )
+        rows = await conn.fetch("SELECT DISTINCT unnest(topics) AS topic FROM memories ORDER BY topic")
         return [row["topic"] for row in rows]
