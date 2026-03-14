@@ -15,7 +15,7 @@ class EmbeddingConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    similarity_threshold: float = 0.7
+    similarity_threshold: float = 0.4
     max_results: int = 10
     adaptive_weights: bool = True
     score_spread_threshold: float = 0.05

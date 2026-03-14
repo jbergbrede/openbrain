@@ -267,7 +267,7 @@ async def keyword_search_memories(
     pool: asyncpg.Pool,
     query: str,
     limit: int = 10,
-    min_rank: float = 0.0,
+    min_rank: float = 1e-4,
 ) -> list[SearchResult]:
     # OR-based query for matching: any word hit surfaces a result.
     # German compound words (e.g. "Bundesautobahn") won't match a query for

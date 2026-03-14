@@ -91,6 +91,7 @@ def create_mcp_server(
             "results": hits,
             "debug": {
                 "query": debug_info.query,
+                "similarity_threshold": settings.search.similarity_threshold,
                 "weights": {"semantic": debug_info.effective_weights[0], "keyword": debug_info.effective_weights[1]},
                 "initial_weights": {"semantic": debug_info.weights[0], "keyword": debug_info.weights[1]},
                 "low_spread_detected": debug_info.low_spread_detected,
