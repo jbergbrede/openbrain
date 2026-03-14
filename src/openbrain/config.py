@@ -27,6 +27,10 @@ class ConnectionConfig(BaseModel):
     max_connections: int = 5
 
 
+class SlackConfig(BaseModel):
+    retrieval_result_limit: int = 5
+
+
 class Settings(BaseSettings):
     # Secrets (env vars only)
     openai_api_key: str = ""
@@ -39,6 +43,7 @@ class Settings(BaseSettings):
     embedding: EmbeddingConfig = EmbeddingConfig()
     search: SearchConfig = SearchConfig()
     connection_finding: ConnectionConfig = ConnectionConfig()
+    slack: SlackConfig = SlackConfig()
 
     model_config = {
         "env_prefix": "",

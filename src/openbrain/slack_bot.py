@@ -11,6 +11,8 @@ from .config import Settings
 from .embeddings import EmbeddingProvider
 from .pipeline import save_memory
 from .repository import delete_memory, find_memory_by_slack_ts
+from .search import hybrid_search
+from .synthesis import synthesize
 
 
 def create_slack_app(
@@ -26,6 +28,14 @@ def create_slack_app(
         except SlackApiError as e:
             if e.response["error"] != "already_reacted":
                 raise
+
+    async def handle_retrieval(query: str, client, channel: str, thread_ts: str | None):
+        results = await hybrid_search(pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit)
+        if not results:
+            text = "_I couldn't find anything about that._"
+        else:
+            text = await synthesize(query, results)
+        await client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
 
     async def save_or_update_thread(channel, thread_ts, messages, author) -> bool:
         content = "\n\n".join(
@@ -100,21 +110,24 @@ def create_slack_app(
         ts = event["ts"]
         user = event.get("user", "unknown")
         try:
-            await save_memory(
-                pool=pool,
-                embedder=embedder,
-                settings=settings,
-                content=content,
-                source="slack",
-                source_metadata={
-                    "channel": channel,
-                    "thread_ts": ts,
-                    "author": user,
-                },
-            )
-            await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
+            if content.startswith("?"):
+                await handle_retrieval(content[1:].strip(), client, channel, thread_ts=None)
+            else:
+                await save_memory(
+                    pool=pool,
+                    embedder=embedder,
+                    settings=settings,
+                    content=content,
+                    source="slack",
+                    source_metadata={
+                        "channel": channel,
+                        "thread_ts": ts,
+                        "author": user,
+                    },
+                )
+                await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
         except Exception as e:
-            logger.error(f"Failed to save memory from DM: {e}")
+            logger.error(f"Failed to handle DM: {e}")
 
     @app.event("app_mention")
     async def handle_mention(event, client, logger):
@@ -127,6 +140,11 @@ def create_slack_app(
         content = re.sub(r"<@[A-Z0-9]+>\s*", "", text, count=1).strip()
 
         try:
+            if content.startswith("?"):
+                query_text = content[1:].strip()
+                reply_ts = thread_ts or ts
+                await handle_retrieval(query_text, client, channel, thread_ts=reply_ts)
+                return
             if not thread_ts:
                 # top-level mention → save this message
                 if not content:
@@ -140,16 +158,14 @@ def create_slack_app(
                     source_metadata={"channel": channel, "thread_ts": ts, "author": user},
                 )
                 await mark_done(client, channel, ts)
-                return
             else:
                 # any thread mention → fetch full thread, upsert
                 result = await client.conversations_replies(channel=channel, ts=thread_ts)
                 saved = await save_or_update_thread(channel, thread_ts, result.get("messages", []), user)
                 if saved:
                     await mark_done(client, channel, thread_ts)
-                return
         except Exception as e:
-            logger.error(f"Failed to save memory from mention: {e}")
+            logger.error(f"Failed to handle mention: {e}")
 
     handler = AsyncSocketModeHandler(app, settings.slack_app_token)
     return app, handler
