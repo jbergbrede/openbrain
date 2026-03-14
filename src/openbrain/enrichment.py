@@ -76,4 +76,6 @@ async def enrich(content: str, existing_topics: list[str]) -> EnrichmentResult:
         raise RuntimeError("Empty result from claude agent")
     if text.startswith("```"):
         text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    if not text:
+        raise RuntimeError("Empty JSON body from claude agent")
     return _parse(json.loads(text), original_content=content)
