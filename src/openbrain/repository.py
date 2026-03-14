@@ -322,6 +322,20 @@ async def update_connections(conn: asyncpg.Connection, memory_id: UUID, connecte
         )
 
 
+async def find_memory_by_paperless_id(pool: asyncpg.Pool, doc_id: int) -> UUID | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM memories
+            WHERE source = 'paperless'
+              AND (source_metadata->>'paperless_document_id')::int = $1
+            LIMIT 1
+            """,
+            doc_id,
+        )
+        return UUID(str(row["id"])) if row else None
+
+
 async def find_memory_by_slack_ts(pool: asyncpg.Pool, channel: str, ts: str) -> UUID | None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(

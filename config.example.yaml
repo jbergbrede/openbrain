@@ -15,3 +15,6 @@ connection_finding:
 
 slack:
   retrieval_result_limit: 5
+
+paperless:
+  base_url: "https://paperless.example.com"
