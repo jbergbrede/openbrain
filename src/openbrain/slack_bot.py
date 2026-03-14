@@ -67,22 +67,31 @@ def create_slack_app(
         """Return (transcript, duration_seconds) if message has an audio file, else None."""
         if not settings.openai_api_key:
             return None
-        for f in message.get("files", []):
+
+        # Collect candidate file objects: top-level files + files nested in attachments
+        candidates: list[dict] = list(message.get("files", []))
+        for attachment in message.get("attachments", []):
+            candidates.extend(attachment.get("files", []))
+
+        for f in candidates:
+            file_id = f.get("id")
+            if not file_id:
+                continue
+            # Always fetch full file info: event objects are partial and may lack mimetype/URLs
+            file_info_resp = await client.files_info(file=file_id)
+            full_file = file_info_resp["file"]
             log.info(
-                "Checking file: id=%s name=%s mime=%s is_audio=%s",
-                f.get("id"),
-                f.get("name"),
-                f.get("mimetype"),
-                is_audio_file(f),
+                "files.info: id=%s name=%s mime=%s is_audio=%s",
+                full_file.get("id"),
+                full_file.get("name"),
+                full_file.get("mimetype"),
+                is_audio_file(full_file),
             )
-            if is_audio_file(f):
-                # Event file objects are partial; fetch full file info for a working download URL
-                log.info(f"Audio file detected: id={f.get('id')} name={f.get('name')} mime={f.get('mimetype')}")
-                file_info_resp = await client.files_info(file=f["id"])
-                full_file = file_info_resp["file"]
+            if is_audio_file(full_file):
                 log.info(
-                    f"files.info url_private_download={full_file.get('url_private_download')} "
-                    f"url_private={full_file.get('url_private')}"
+                    "url_private_download=%s url_private=%s",
+                    full_file.get("url_private_download"),
+                    full_file.get("url_private"),
                 )
                 transcript, duration = await transcribe_slack_file(
                     bot_token=settings.slack_bot_token,
