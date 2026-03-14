@@ -65,6 +65,8 @@ async def save_memory(
         async with conn.transaction():
             new_id = await insert_memory_with_conn(conn, new_memory)
             await update_connections(conn, new_id, connected_ids)
+            for cid in connected_ids:
+                await update_connections(conn, cid, [new_id])
 
     new_memory.id = new_id
     return new_memory

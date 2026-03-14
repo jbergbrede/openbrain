@@ -9,7 +9,7 @@ from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
 from .config import Settings
 from .embeddings import EmbeddingProvider
 from .pipeline import save_memory
-from .repository import find_memory_by_slack_ts, link_memories
+from .repository import delete_memory, find_memory_by_slack_ts
 
 
 def create_slack_app(
@@ -18,6 +18,22 @@ def create_slack_app(
     settings: Settings,
 ) -> tuple[AsyncApp, AsyncSocketModeHandler]:
     app = AsyncApp(token=settings.slack_bot_token)
+
+    async def save_or_update_thread(channel, thread_ts, messages, author):
+        content = "\n\n".join(
+            re.sub(r"<@[A-Z0-9]+>\s*", "", m.get("text", "")).strip()
+            for m in messages if m.get("text")
+        )
+        if not content:
+            return
+        existing_id = await find_memory_by_slack_ts(pool, channel, thread_ts)
+        if existing_id:
+            await delete_memory(pool, existing_id)
+        await save_memory(
+            pool=pool, embedder=embedder, settings=settings,
+            content=content, source="slack",
+            source_metadata={"channel": channel, "thread_ts": thread_ts, "author": author},
+        )
 
     @app.event("reaction_added")
     async def handle_reaction(event, client, logger):
@@ -39,32 +55,22 @@ def create_slack_app(
             author = message.get("user", "unknown")
             thread_ts = message.get("thread_ts", ts)
 
-            if message.get("reply_count", 0) > 0:
-                # Thread root with replies → fetch and save entire thread
+            if message.get("reply_count", 0) > 0 or message.get("thread_ts"):
+                # thread root with replies OR a reply — fetch full thread, upsert
                 thread_result = await client.conversations_replies(
-                    channel=channel, ts=ts
+                    channel=channel, ts=thread_ts
                 )
-                thread_messages = thread_result.get("messages", [])
-                content = "\n\n".join(
-                    m.get("text", "") for m in thread_messages if m.get("text")
-                )
+                await save_or_update_thread(channel, thread_ts, thread_result.get("messages", []), author)
             else:
+                # standalone message
                 content = message.get("text", "")
-
-            if not content:
-                return
-            await save_memory(
-                pool=pool,
-                embedder=embedder,
-                settings=settings,
-                content=content,
-                source="slack",
-                source_metadata={
-                    "channel": channel,
-                    "thread_ts": thread_ts,
-                    "author": author,
-                },
-            )
+                if not content:
+                    return
+                await save_memory(
+                    pool=pool, embedder=embedder, settings=settings,
+                    content=content, source="slack",
+                    source_metadata={"channel": channel, "thread_ts": ts, "author": author},
+                )
             await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
         except Exception as e:
             logger.error(f"Failed to save memory from reaction: {e}")
@@ -110,7 +116,7 @@ def create_slack_app(
 
         try:
             if not thread_ts:
-                # Case 1: top-level mention → save like 🧠
+                # top-level mention → save this message
                 if not content:
                     return
                 await save_memory(
@@ -119,38 +125,11 @@ def create_slack_app(
                     source_metadata={"channel": channel, "thread_ts": ts, "author": user},
                 )
             else:
-                root_memory_id = await find_memory_by_slack_ts(pool, channel, thread_ts)
-
-                if root_memory_id:
-                    # Case 2: root saved → save reply + link
-                    if not content:
-                        return
-                    reply_memory = await save_memory(
-                        pool=pool, embedder=embedder, settings=settings,
-                        content=content, source="slack",
-                        source_metadata={"channel": channel, "thread_ts": thread_ts, "author": user},
-                    )
-                    await link_memories(pool, reply_memory.id, root_memory_id)
-                else:
-                    # Case 3: root not saved → fetch entire thread, save as one memory
-                    result = await client.conversations_replies(
-                        channel=channel, ts=thread_ts
-                    )
-                    messages = result.get("messages", [])
-                    if not messages:
-                        return
-                    thread_content = "\n\n".join(
-                        re.sub(r"<@[A-Z0-9]+>\s*", "", m.get("text", "")).strip()
-                        for m in messages
-                        if m.get("text")
-                    )
-                    if not thread_content:
-                        return
-                    await save_memory(
-                        pool=pool, embedder=embedder, settings=settings,
-                        content=thread_content, source="slack",
-                        source_metadata={"channel": channel, "thread_ts": thread_ts, "author": user},
-                    )
+                # any thread mention → fetch full thread, upsert
+                result = await client.conversations_replies(
+                    channel=channel, ts=thread_ts
+                )
+                await save_or_update_thread(channel, thread_ts, result.get("messages", []), user)
 
             await client.reactions_add(channel=channel, timestamp=ts, name="white_check_mark")
         except Exception as e:

@@ -153,10 +153,15 @@ async def list_memories(
 
 async def delete_memory(pool: asyncpg.Pool, memory_id: UUID) -> bool:
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM memories WHERE id = $1",
-            str(memory_id),
-        )
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE memories SET connections = array_remove(connections, $1::uuid) WHERE $1::uuid = ANY(connections)",
+                str(memory_id),
+            )
+            result = await conn.execute(
+                "DELETE FROM memories WHERE id = $1",
+                str(memory_id),
+            )
         return result == "DELETE 1"
 
 
