@@ -128,7 +128,9 @@ def create_slack_app(
                     if not messages:
                         return
                     thread_content = "\n\n".join(
-                        m.get("text", "") for m in messages if m.get("text")
+                        re.sub(r"<@[A-Z0-9]+>\s*", "", m.get("text", "")).strip()
+                        for m in messages
+                        if m.get("text")
                     )
                     if not thread_content:
                         return
