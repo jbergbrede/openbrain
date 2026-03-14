@@ -22,16 +22,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Sanitize branch name
-        id: branch
-        run: echo "tag=$(echo '${{ github.head_ref || github.ref_name }}' | sed 's/[^a-zA-Z0-9._-]/-/g')" >> $GITHUB_OUTPUT
-
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ github.event_name == 'push' && format('jbergbrede/openbrain:latest\njbergbrede/openbrain:{0}', github.sha) || format('jbergbrede/openbrain:dev\njbergbrede/openbrain:{0}', steps.branch.outputs.tag) }}
+          tags: ${{ github.event_name == 'push' && format('jbergbrede/openbrain:latest,jbergbrede/openbrain:{0}', github.sha) || 'jbergbrede/openbrain:dev' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
