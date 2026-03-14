@@ -17,5 +17,6 @@ COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
 ENV MODE=slack
+ENV PATH="/root/.local/bin:$PATH"
 
 ENTRYPOINT ["./entrypoint.sh"]
