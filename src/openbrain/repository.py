@@ -128,8 +128,8 @@ async def insert_chunks(conn: asyncpg.Connection, chunks: list[Chunk]) -> None:
 async def search_chunks(
     pool: asyncpg.Pool,
     embedding: list[float],
-    limit: int = 10,
     threshold: float,
+    limit: int = 10,
 ) -> list[ChunkSearchResult]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
