@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import io
+import logging
+import os
 
 import aiohttp
 from openai import AsyncOpenAI
+
+log = logging.getLogger(__name__)
 
 _AUDIO_MIME_PREFIXES = ("audio/",)
 _AUDIO_VIDEO_MIMES = ("video/mp4", "video/webm")
@@ -32,8 +36,6 @@ def is_audio_file(file_info: dict) -> bool:
 
 def _whisper_filename(file_info: dict) -> str:
     """Return a filename with a Whisper-recognised extension."""
-    import os
-
     name = file_info.get("name", "audio")
     _, ext = os.path.splitext(name)
     if ext.lstrip(".").lower() in _MIME_TO_EXT.values():
@@ -65,10 +67,7 @@ async def transcribe_slack_file(
     """
     url = file_info.get("url_private_download") or file_info.get("url_private")
     filename = _whisper_filename(file_info)
-
-    import logging
-
-    log = logging.getLogger(__name__)
+    log.info(f"Downloading file: url={url} filename={filename}")
 
     headers = {"Authorization": f"Bearer {bot_token}"}
     async with aiohttp.ClientSession() as session:
@@ -93,4 +92,5 @@ async def transcribe_slack_file(
 
     transcript = result.text or ""
     duration = float(result.duration) if result.duration is not None else 0.0
+    log.info(f"Transcription complete: duration={duration:.1f}s transcript_len={len(transcript)}")
     return transcript, duration
