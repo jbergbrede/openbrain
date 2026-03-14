@@ -8,6 +8,7 @@ Usage:
 Run AFTER applying migration 004_chunking.sql.
 Run BEFORE applying migration 005_drop_embedding.sql.
 """
+
 from __future__ import annotations
 
 import asyncio
