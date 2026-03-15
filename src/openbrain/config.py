@@ -32,7 +32,7 @@ class SlackConfig(BaseModel):
 
 
 class PaperlessConfig(BaseModel):
-    base_url: str = "https://paperless.example.com"
+    base_url: str = ""
 
 
 class Settings(BaseSettings):
