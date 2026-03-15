@@ -29,6 +29,7 @@ class ConnectionConfig(BaseModel):
 
 class SlackConfig(BaseModel):
     retrieval_result_limit: int = 5
+    list_result_limit: int = 5
 
 
 class PaperlessConfig(BaseModel):
