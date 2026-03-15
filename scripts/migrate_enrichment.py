@@ -20,21 +20,18 @@ Memories that already have keywords populated are skipped.
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
-from uuid import UUID
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import asyncpg
 
-from openbrain.chunker import chunk_content, count_tokens
+from openbrain.chunker import count_tokens
 from openbrain.config import load_config
 from openbrain.db import _init_conn
 from openbrain.embeddings import get_embedder
 from openbrain.enrichment import enrich
-from openbrain.models import Chunk
 from openbrain.repository import get_distinct_topics
 
 BATCH_SIZE = 5

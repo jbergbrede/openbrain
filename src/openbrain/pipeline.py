@@ -6,7 +6,7 @@ from uuid import UUID
 
 import asyncpg
 
-from .chunker import chunk_content
+from .chunker import chunk_content, count_tokens
 from .config import Settings
 from .embeddings import EmbeddingProvider
 from .enrichment import enrich
@@ -95,8 +95,6 @@ async def save_memory(
                 for raw, emb in zip(raw_chunks, chunk_embeddings)
             ]
             # Synthetic question chunks
-            from .chunker import count_tokens
-
             for q_text, q_emb in zip(question_texts, question_embeddings):
                 chunk_models.append(
                     Chunk(
