@@ -12,7 +12,9 @@ from .config import Settings
 from .embeddings import EmbeddingProvider
 from .paperless import fetch_paperless_document
 from .pipeline import save_memory
+from .models import SearchResult
 from .repository import delete_memory, find_memory_by_paperless_id, find_memory_by_slack_ts
+from .repository import list_memories as list_memories_db
 from .search import SearchDebugInfo, hybrid_search
 from .synthesis import synthesize
 from .transcribe import is_audio_file, transcribe_slack_file
@@ -363,6 +365,61 @@ def create_slack_app(
         except Exception as e:
             logger.error(f"Failed to handle mention: {e}")
             await mark_error(client, channel, ts)
+
+    @app.command("/list_memories")
+    async def handle_list_memories(ack, body, client, logger):
+        await ack()
+        text = (body.get("text") or "").strip()
+        default_limit = settings.slack.list_result_limit
+        try:
+            limit = int(text) if text else default_limit
+            limit = max(1, min(limit, 50))
+        except ValueError:
+            limit = default_limit
+        channel = body["channel_id"]
+        user = body["user_id"]
+        try:
+            memories = await list_memories_db(pool=pool, limit=limit)
+            if not memories:
+                out = "_No memories stored yet._"
+            else:
+                results = [
+                    SearchResult(
+                        memory=m,
+                        similarity=1.0,
+                        score=1.0,
+                        chunk_content=m.summary or m.content,
+                        chunk_id=None,
+                    )
+                    for m in memories
+                ]
+                out = await synthesize(f"Summarize my {limit} most recent memories", results)
+            await client.chat_postEphemeral(channel=channel, user=user, text=out)
+        except Exception as e:
+            logger.error(f"/list_memories failed: {e}")
+            await client.chat_postEphemeral(channel=channel, user=user, text="_Failed to retrieve memories._")
+
+    @app.command("/search_memories")
+    async def handle_search_memories(ack, body, client, logger):
+        await ack()
+        query = (body.get("text") or "").strip()
+        channel = body["channel_id"]
+        user = body["user_id"]
+        if not query:
+            await client.chat_postEphemeral(channel=channel, user=user, text="_Usage: /search_memories <query>_")
+            return
+        try:
+            results = await hybrid_search(
+                pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit
+            )
+            if not results:
+                out = "_I couldn't find anything about that._"
+            else:
+                out = await synthesize(query, results)
+            await client.chat_postEphemeral(channel=channel, user=user, text=out)
+        except Exception as e:
+            logger.error(f"/search_memories failed: {e}")
+            await client.chat_postEphemeral(channel=channel, user=user, text="_Search failed._")
 
     handler = AsyncSocketModeHandler(app, settings.slack_app_token)
     return app, handler
