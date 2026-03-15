@@ -20,6 +20,8 @@ class SearchConfig(BaseModel):
     adaptive_weights: bool = True
     score_spread_threshold: float = 0.05
     rrf_k: int = 60
+    query_expansion: bool = False
+    query_expansion_model: str = "haiku"
 
 
 class ConnectionConfig(BaseModel):

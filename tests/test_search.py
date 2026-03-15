@@ -262,6 +262,27 @@ def test_promote_chunks_max_similarity():
     assert promoted[0].chunk_content == "second chunk"
 
 
+def test_promote_chunks_synthetic_boosts_score_but_real_content_shown():
+    """Synthetic chunks participate in scoring but real chunk content is returned."""
+    mem = make_memory()
+    real_chunk = Chunk(memory_id=mem.id, chunk_index=0, content="real content", token_count=2)
+    synthetic_chunk = Chunk(
+        memory_id=mem.id, chunk_index=-1, content="How much did it cost?", token_count=5, is_synthetic=True
+    )
+
+    results = [
+        ChunkSearchResult(chunk=real_chunk, memory=mem, similarity=0.7),
+        ChunkSearchResult(chunk=synthetic_chunk, memory=mem, similarity=0.95),
+    ]
+    promoted = _promote_chunks_to_memories(results)
+
+    assert len(promoted) == 1
+    # Score comes from the synthetic chunk (highest)
+    assert promoted[0].similarity == 0.95
+    # But content comes from the real chunk
+    assert promoted[0].chunk_content == "real content"
+
+
 def test_promote_chunks_multiple_memories():
     """Each memory gets its own promoted result."""
     m1 = make_memory(content="memory one")

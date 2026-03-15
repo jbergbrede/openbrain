@@ -18,6 +18,12 @@ Fields:
 - language: detected language of the input, either "en" or "de"
 - content_english: the content in English (original if input is English, translation if input is German)
 - content_german: the content in German (original if input is German, translation if input is English)
+- keywords: list of 10-15 search terms NOT already in the content that someone \
+might use to find this information. Include synonyms, broader categories, \
+colloquial terms, and related concepts in both English and German.
+- questions: list of 3-5 natural language questions this content would answer. \
+Include both English and German questions. Be specific — reference concrete \
+details from the content rather than generating generic questions.
 
 Return ONLY a JSON object with these exact keys. No markdown, no explanation.\
 """
@@ -50,6 +56,8 @@ def _parse(data: dict, original_content: str) -> EnrichmentResult:
         language=language,
         content_english=content_english,
         content_german=content_german,
+        keywords=data.get("keywords") or [],
+        questions=data.get("questions") or [],
     )
 
 

@@ -36,12 +36,17 @@ async def save_memory(
         asyncio.to_thread(chunk_content, content),
     )
 
-    # Embed all chunks + summary (for connection finding) in parallel
-    chunk_texts = [c.content for c in raw_chunks]
-    chunk_embeddings, summary_embedding = await asyncio.gather(
-        embedder.embed_batch(chunk_texts),
+    # Embed content chunks (with contextual headers) + synthetic questions + summary
+    header = f"[{enrichment.summary} | {', '.join(enrichment.topics)}]"
+    content_embed_texts = [f"{header} {c.content}" for c in raw_chunks]
+    question_texts = enrichment.questions or []
+    all_embed_texts = content_embed_texts + question_texts
+    all_embeddings, summary_embedding = await asyncio.gather(
+        embedder.embed_batch(all_embed_texts),
         embedder.embed(enrichment.summary),
     )
+    chunk_embeddings = all_embeddings[: len(raw_chunks)]
+    question_embeddings = all_embeddings[len(raw_chunks) :]
 
     # Find connections using summary embedding (dedupe to memory level)
     candidate_results = await search_chunks(
@@ -71,11 +76,14 @@ async def save_memory(
         language=enrichment.language,
         content_english=enrichment.content_english or None,
         content_german=enrichment.content_german or None,
+        keywords=enrichment.keywords,
+        questions=enrichment.questions,
     )
 
     async with pool.acquire() as conn:
         async with conn.transaction():
             new_id = await insert_memory_with_conn(conn, new_memory)
+            # Content chunks
             chunk_models = [
                 Chunk(
                     memory_id=new_id,
@@ -86,6 +94,20 @@ async def save_memory(
                 )
                 for raw, emb in zip(raw_chunks, chunk_embeddings)
             ]
+            # Synthetic question chunks
+            from .chunker import count_tokens
+
+            for q_text, q_emb in zip(question_texts, question_embeddings):
+                chunk_models.append(
+                    Chunk(
+                        memory_id=new_id,
+                        chunk_index=-1,
+                        content=q_text,
+                        token_count=count_tokens(q_text),
+                        embedding=q_emb,
+                        is_synthetic=True,
+                    )
+                )
             await insert_chunks(conn, chunk_models)
             await update_connections(conn, new_id, connected_ids)
             for cid in connected_ids:
