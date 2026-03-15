@@ -140,9 +140,7 @@ async def hybrid_search(
     if settings.search.query_expansion:
         from .query_expansion import expand_for_semantic
 
-        expanded_query = await expand_for_semantic(
-            query, model=settings.search.query_expansion_model
-        )
+        expanded_query = await expand_for_semantic(query, model=settings.search.query_expansion_model)
         semantic_query = expanded_query
     else:
         semantic_query = query
