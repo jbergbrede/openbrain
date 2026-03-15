@@ -13,7 +13,7 @@ from .embeddings import EmbeddingProvider
 from .paperless import fetch_paperless_document
 from .pipeline import save_memory
 from .repository import delete_memory, find_memory_by_paperless_id, find_memory_by_slack_ts
-from .search import hybrid_search
+from .search import SearchDebugInfo, hybrid_search
 from .synthesis import synthesize
 from .transcribe import is_audio_file, transcribe_slack_file
 
@@ -56,13 +56,45 @@ def create_slack_app(
             if e.response["error"] != "already_reacted":
                 raise
 
-    async def handle_retrieval(query: str, client, channel: str, thread_ts: str | None):
-        results = await hybrid_search(pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit)
+    async def handle_retrieval(query: str, client, channel: str, thread_ts: str | None, debug: bool = False):
+        if debug:
+            results, dbg = await hybrid_search(
+                pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit, debug=True
+            )
+        else:
+            results = await hybrid_search(pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit)
+
         if not results:
             text = "_I couldn't find anything about that._"
         else:
             text = await synthesize(query, results)
+
+        if debug:
+            text += "\n\n" + _format_debug(dbg)
+
         await client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+
+    def _format_debug(dbg: SearchDebugInfo) -> str:
+        lines = [
+            "```",
+            f"[debug] weights: semantic={dbg.weights[0]}, keyword={dbg.weights[1]}",
+            f"[debug] effective_weights: semantic={dbg.effective_weights[0]}, keyword={dbg.effective_weights[1]}",
+            f"[debug] low_spread_detected: {dbg.low_spread_detected}",
+            "",
+            f"[semantic hits: {len(dbg.semantic_hits)}]",
+        ]
+        for h in dbg.semantic_hits:
+            lines.append(f"  {h['similarity']:.4f}  {h['chunk_content'][:80]!r}")
+        if dbg.top_semantic_below_threshold:
+            t = dbg.top_semantic_below_threshold
+            lines.append(
+                f"  (top below threshold={t['threshold']}: {t['similarity']:.4f}  {t['chunk_content'][:80]!r})"
+            )
+        lines.append(f"\n[keyword hits: {len(dbg.keyword_hits)}]")
+        for h in dbg.keyword_hits:
+            lines.append(f"  rank={h['kw_rank']:.4f}  {h['summary'] or ''}")
+        lines.append("```")
+        return "\n".join(lines)
 
     async def extract_audio(client, message: dict) -> tuple[str, float] | None:
         """Return (transcript, duration_seconds) if message has an audio file, else None."""
@@ -244,6 +276,12 @@ def create_slack_app(
         user = event.get("user", "unknown")
         text = event.get("text", "")
 
+        if text.startswith("??"):
+            try:
+                await handle_retrieval(text[2:].strip(), client, channel, thread_ts=None, debug=True)
+            except Exception as e:
+                logger.error(f"Failed to handle DM retrieval: {e}")
+            return
         if text.startswith("?"):
             try:
                 await handle_retrieval(text[1:].strip(), client, channel, thread_ts=None)
@@ -283,6 +321,14 @@ def create_slack_app(
         if settings.paperless.base_url and settings.paperless.base_url in text:
             return await handle_paperless_message(event, client, logger)
 
+        if content_text.startswith("??"):
+            try:
+                query_text = content_text[2:].strip()
+                reply_ts = thread_ts or ts
+                await handle_retrieval(query_text, client, channel, thread_ts=reply_ts, debug=True)
+            except Exception as e:
+                logger.error(f"Failed to handle mention retrieval: {e}")
+            return
         if content_text.startswith("?"):
             try:
                 query_text = content_text[1:].strip()
