@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     model_config = {
         "env_prefix": "",
         "env_nested_delimiter": "__",
-        "env_file": ".env",
+        "env_file": os.environ.get("OPENBRAIN_ENV_FILE", ".env"),
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
