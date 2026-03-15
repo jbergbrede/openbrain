@@ -28,6 +28,9 @@ async def save_memory(
     source: str = "mcp",
     source_metadata: dict | None = None,
 ) -> Memory:
+    if count_tokens(content.strip()) < 5:
+        raise ValueError(f"Content too short to save as memory: {content!r}")
+
     existing_topics = await get_distinct_topics(pool)
 
     # Enrich and chunk in parallel (both are independent of each other)
