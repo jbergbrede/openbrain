@@ -34,11 +34,14 @@ def _row_to_memory(row: asyncpg.Record) -> Memory:
         language=row["language"] if "language" in keys else "en",
         content_english=row["content_english"] if "content_english" in keys else None,
         content_german=row["content_german"] if "content_german" in keys else None,
+        keywords=list(row["keywords"] or []) if "keywords" in keys else [],
+        questions=list(row["questions"] or []) if "questions" in keys else [],
     )
 
 
 async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
     action_items = [{"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items]
+    keywords_text = " ".join(memory.keywords) if memory.keywords else ""
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -46,12 +49,14 @@ async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
             INSERT INTO memories
                 (content, summary, people, topics, action_items,
                  connections, source, source_metadata,
-                 language, content_english, content_german, search_vector)
+                 language, content_english, content_german,
+                 keywords, questions, search_vector)
             VALUES ($1, $2, $3, $4, $5::jsonb, $6::uuid[], $7, $8::jsonb,
-                    $9, $10, $11,
+                    $9, $10, $11, $12, $13,
                     setweight(to_tsvector('english', COALESCE($10, '')), 'A') ||
                     setweight(to_tsvector('german',  COALESCE($11, '')), 'A') ||
-                    setweight(to_tsvector('english', COALESCE($2, '')), 'B'))
+                    setweight(to_tsvector('english', COALESCE($2, '')),  'B') ||
+                    setweight(to_tsvector('simple',  COALESCE($14, '')), 'B'))
             RETURNING id
             """,
             memory.content,
@@ -65,24 +70,30 @@ async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
             memory.language,
             memory.content_english,
             memory.content_german,
+            memory.keywords,
+            memory.questions,
+            keywords_text,
         )
         return UUID(str(row["id"]))
 
 
 async def insert_memory_with_conn(conn: asyncpg.Connection, memory: Memory) -> UUID:
     action_items = [{"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items]
+    keywords_text = " ".join(memory.keywords) if memory.keywords else ""
 
     row = await conn.fetchrow(
         """
         INSERT INTO memories
             (content, summary, people, topics, action_items,
              connections, source, source_metadata,
-             language, content_english, content_german, search_vector)
+             language, content_english, content_german,
+             keywords, questions, search_vector)
         VALUES ($1, $2, $3, $4, $5::jsonb, $6::uuid[], $7, $8::jsonb,
-                $9, $10, $11,
+                $9, $10, $11, $12, $13,
                 setweight(to_tsvector('english', COALESCE($10, '')), 'A') ||
                 setweight(to_tsvector('german',  COALESCE($11, '')), 'A') ||
-                setweight(to_tsvector('english', COALESCE($2, '')), 'B'))
+                setweight(to_tsvector('english', COALESCE($2, '')),  'B') ||
+                setweight(to_tsvector('simple',  COALESCE($14, '')), 'B'))
         RETURNING id
         """,
         memory.content,
@@ -96,6 +107,9 @@ async def insert_memory_with_conn(conn: asyncpg.Connection, memory: Memory) -> U
         memory.language,
         memory.content_english,
         memory.content_german,
+        memory.keywords,
+        memory.questions,
+        keywords_text,
     )
     return UUID(str(row["id"]))
 
@@ -103,8 +117,8 @@ async def insert_memory_with_conn(conn: asyncpg.Connection, memory: Memory) -> U
 async def insert_chunks(conn: asyncpg.Connection, chunks: list[Chunk]) -> None:
     await conn.executemany(
         """
-        INSERT INTO chunks (memory_id, chunk_index, content, embedding, token_count)
-        VALUES ($1, $2, $3, $4::vector, $5)
+        INSERT INTO chunks (memory_id, chunk_index, content, embedding, token_count, is_synthetic)
+        VALUES ($1, $2, $3, $4::vector, $5, $6)
         """,
         [
             (
@@ -113,6 +127,7 @@ async def insert_chunks(conn: asyncpg.Connection, chunks: list[Chunk]) -> None:
                 c.content,
                 str(c.embedding) if c.embedding else None,
                 c.token_count,
+                c.is_synthetic,
             )
             for c in chunks
         ],
@@ -134,6 +149,7 @@ async def search_chunks(
                 c.chunk_index,
                 c.content AS chunk_content,
                 c.token_count,
+                c.is_synthetic,
                 1 - (c.embedding <=> $1::vector) AS similarity,
                 m.id,
                 m.content,
@@ -147,7 +163,9 @@ async def search_chunks(
                 m.source_metadata,
                 m.language,
                 m.content_english,
-                m.content_german
+                m.content_german,
+                m.keywords,
+                m.questions
             FROM chunks c
             JOIN memories m ON c.memory_id = m.id
             WHERE c.embedding IS NOT NULL
@@ -182,6 +200,8 @@ async def search_chunks(
                 language=row["language"],
                 content_english=row["content_english"],
                 content_german=row["content_german"],
+                keywords=list(row["keywords"] or []),
+                questions=list(row["questions"] or []),
             )
             chunk = Chunk(
                 id=UUID(str(row["chunk_id"])),
@@ -189,6 +209,7 @@ async def search_chunks(
                 chunk_index=row["chunk_index"],
                 content=row["chunk_content"],
                 token_count=row["token_count"],
+                is_synthetic=row["is_synthetic"],
             )
             results.append(
                 ChunkSearchResult(

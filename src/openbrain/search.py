@@ -34,23 +34,38 @@ def detect_low_spread(scores: list[float], threshold: float = 0.05) -> bool:
 def _promote_chunks_to_memories(
     chunk_results: list[ChunkSearchResult],
 ) -> list[SearchResult]:
-    """MAX similarity per memory; track top-scoring chunk per memory."""
-    best: dict[UUID, tuple[float, ChunkSearchResult]] = {}
+    """MAX similarity per memory; track top-scoring chunk per memory.
+    Synthetic chunks participate in scoring but the returned chunk_content
+    comes from the best real (non-synthetic) chunk."""
+    best_score: dict[UUID, float] = {}
+    best_real: dict[UUID, ChunkSearchResult] = {}
+    memory_map: dict[UUID, Memory] = {}
+
     for cr in chunk_results:
         mid = cr.memory.id
-        if mid not in best or cr.similarity > best[mid][0]:
-            best[mid] = (cr.similarity, cr)
+        memory_map[mid] = cr.memory
 
-    promoted = [
-        SearchResult(
-            memory=cr.memory,
-            similarity=sim,
-            score=sim,
-            chunk_content=cr.chunk.content,
-            chunk_id=cr.chunk.id,
+        # Track overall best score (synthetic or not)
+        if mid not in best_score or cr.similarity > best_score[mid]:
+            best_score[mid] = cr.similarity
+
+        # Track best non-synthetic chunk for display
+        if not cr.chunk.is_synthetic:
+            if mid not in best_real or cr.similarity > best_real[mid].similarity:
+                best_real[mid] = cr
+
+    promoted = []
+    for mid, sim in best_score.items():
+        real = best_real.get(mid)
+        promoted.append(
+            SearchResult(
+                memory=memory_map[mid],
+                similarity=sim,
+                score=sim,
+                chunk_content=real.chunk.content if real else None,
+                chunk_id=real.chunk.id if real else None,
+            )
         )
-        for sim, cr in best.values()
-    ]
     promoted.sort(key=lambda r: r.similarity, reverse=True)
     return promoted
 
@@ -106,6 +121,7 @@ class SearchDebugInfo:
     semantic_hits: list[dict] = field(default_factory=list)
     keyword_hits: list[dict] = field(default_factory=list)
     top_semantic_below_threshold: dict | None = None
+    expanded_query: str | None = None
 
 
 async def hybrid_search(
@@ -116,10 +132,22 @@ async def hybrid_search(
     limit: int = 10,
     debug: bool = False,
 ) -> list[SearchResult] | tuple[list[SearchResult], SearchDebugInfo]:
+    # Adaptive weighting always uses the ORIGINAL query length
     weights = get_weights(query)
 
+    # Optionally expand the query for the semantic leg
+    expanded_query = None
+    if settings.search.query_expansion:
+        from .query_expansion import expand_for_semantic
+
+        expanded_query = await expand_for_semantic(query, model=settings.search.query_expansion_model)
+        semantic_query = expanded_query
+    else:
+        semantic_query = query
+
+    # Keyword leg always uses original query; semantic leg uses expanded query
     embedding, keyword_results = await asyncio.gather(
-        embedder.embed(query),
+        embedder.embed(semantic_query),
         repository.keyword_search_memories(pool, query, limit=limit),
     )
 
@@ -192,5 +220,6 @@ async def hybrid_search(
             for r in keyword_results
         ],
         top_semantic_below_threshold=top_below_threshold,
+        expanded_query=expanded_query,
     )
     return results, debug_info

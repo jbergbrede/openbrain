@@ -25,6 +25,8 @@ class Memory:
     language: str = "en"
     content_english: str | None = None
     content_german: str | None = None
+    keywords: list[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -35,6 +37,7 @@ class Chunk:
     token_count: int
     embedding: list[float] | None = None
     id: UUID | None = None
+    is_synthetic: bool = False
 
 
 @dataclass
@@ -62,3 +65,5 @@ class EnrichmentResult:
     language: str = "en"
     content_english: str = ""
     content_german: str = ""
+    keywords: list[str] = field(default_factory=list)
+    questions: list[str] = field(default_factory=list)
