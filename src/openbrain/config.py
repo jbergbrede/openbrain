@@ -25,8 +25,12 @@ class SearchConfig(BaseModel):
 
 
 class ConnectionConfig(BaseModel):
-    similarity_threshold: float = 0.75
-    max_connections: int = 5
+    similarity_threshold: float = 0.55
+    max_connections: int = 10
+    topic_boost: float = 0.1
+    people_boost: float = 0.05
+    keyword_boost: float = 0.05
+    composite_threshold: float = 0.5
 
 
 class SlackConfig(BaseModel):

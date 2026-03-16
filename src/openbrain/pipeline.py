@@ -12,10 +12,11 @@ from .embeddings import EmbeddingProvider
 from .enrichment import enrich
 from .models import Chunk, Memory
 from .repository import (
+    find_connection_candidates,
     get_distinct_topics,
+    insert_action_items,
     insert_chunks,
     insert_memory_with_conn,
-    search_chunks,
     update_connections,
 )
 
@@ -51,19 +52,22 @@ async def save_memory(
     chunk_embeddings = all_embeddings[: len(raw_chunks)]
     question_embeddings = all_embeddings[len(raw_chunks) :]
 
-    # Find connections using summary embedding (dedupe to memory level)
-    candidate_results = await search_chunks(
+    # Find connections using multi-signal scoring
+    cfg = settings.connection_finding
+    candidate_results = await find_connection_candidates(
         pool=pool,
         embedding=summary_embedding,
-        limit=settings.connection_finding.max_connections,
-        threshold=settings.connection_finding.similarity_threshold,
+        topics=enrichment.topics,
+        keywords=enrichment.keywords,
+        people=enrichment.people,
+        limit=cfg.max_connections,
+        threshold=cfg.similarity_threshold,
+        topic_boost=cfg.topic_boost,
+        people_boost=cfg.people_boost,
+        keyword_boost=cfg.keyword_boost,
+        composite_threshold=cfg.composite_threshold,
     )
-    seen: set[UUID] = set()
-    connected_ids: list[UUID] = []
-    for r in candidate_results:
-        if r.memory.id not in seen:
-            seen.add(r.memory.id)
-            connected_ids.append(r.memory.id)
+    connected_ids: list[UUID] = [r.memory.id for r in candidate_results]
 
     new_memory = Memory(
         id=UUID("00000000-0000-0000-0000-000000000000"),  # placeholder, DB assigns
@@ -72,7 +76,6 @@ async def save_memory(
         summary=enrichment.summary,
         people=enrichment.people,
         topics=enrichment.topics,
-        action_items=enrichment.action_items,
         connections=connected_ids,
         source=source,
         source_metadata=source_metadata or {},
@@ -110,6 +113,8 @@ async def save_memory(
                     )
                 )
             await insert_chunks(conn, chunk_models)
+            if enrichment.action_items:
+                await insert_action_items(conn, new_id, enrichment.action_items)
             await update_connections(conn, new_id, connected_ids)
             for cid in connected_ids:
                 await update_connections(conn, cid, [new_id])

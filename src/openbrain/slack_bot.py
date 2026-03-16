@@ -10,10 +10,11 @@ from slack_sdk.errors import SlackApiError
 
 from .config import Settings
 from .embeddings import EmbeddingProvider
+from .models import SearchResult
 from .paperless import fetch_paperless_document
 from .pipeline import save_memory
-from .models import SearchResult
 from .repository import delete_memory, find_memory_by_paperless_id, find_memory_by_slack_ts
+from .repository import list_action_items as list_action_items_db
 from .repository import list_memories as list_memories_db
 from .search import SearchDebugInfo, hybrid_search
 from .synthesis import synthesize
@@ -399,6 +400,30 @@ def create_slack_app(
             logger.error(f"/list_memories failed: {e}")
             await client.chat_postEphemeral(channel=channel, user=user, text="_Failed to retrieve memories._")
 
+    @app.command("/action_items")
+    async def handle_action_items(ack, body, client, logger):
+        await ack()
+        text = (body.get("text") or "").strip().lower()
+        channel = body["channel_id"]
+        user = body["user_id"]
+        status = "open"
+        if text in ("all", "done"):
+            status = text
+        try:
+            items = await list_action_items_db(pool=pool, status=status, limit=settings.slack.list_result_limit)
+            if not items:
+                out = f"_No {status} action items found._"
+            else:
+                lines = [f"*Action items ({status}):*"]
+                for item in items:
+                    due = f" (due {item['due_date']})" if item["due_date"] else ""
+                    lines.append(f"• {item['text']}{due} — _{item['memory_title']}_")
+                out = "\n".join(lines)
+            await client.chat_postEphemeral(channel=channel, user=user, text=out)
+        except Exception as e:
+            logger.error(f"/action_items failed: {e}")
+            await client.chat_postEphemeral(channel=channel, user=user, text="_Failed to retrieve action items._")
+
     @app.command("/search_memories")
     async def handle_search_memories(ack, body, client, logger):
         await ack()
@@ -409,9 +434,7 @@ def create_slack_app(
             await client.chat_postEphemeral(channel=channel, user=user, text="_Usage: /search_memories <query>_")
             return
         try:
-            results = await hybrid_search(
-                pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit
-            )
+            results = await hybrid_search(pool, embedder, query, settings, limit=settings.slack.retrieval_result_limit)
             if not results:
                 out = "_I couldn't find anything about that._"
             else:
