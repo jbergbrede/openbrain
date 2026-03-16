@@ -8,6 +8,9 @@ class ActionItem:
     text: str
     status: str = "open"
     due_date: str | None = None
+    id: UUID | None = None
+    memory_id: UUID | None = None
+    created_at: datetime | None = None
 
 
 @dataclass

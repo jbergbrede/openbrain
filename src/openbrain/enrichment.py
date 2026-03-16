@@ -14,7 +14,15 @@ Fields:
 - summary: concise 1-2 sentence summary
 - people: list of people mentioned (first/last names, use empty list if none)
 - topics: list of relevant topics/themes (prefer reusing existing topics from the provided list)
-- action_items: list of tasks/todos, each with "text" and optional "due_date" (ISO date string or null)
+- action_items: list of concrete tasks the user needs to act on. Each item MUST have a \
+clear verb and object (e.g., "Call roofer for quote", "Pay invoice EUR 80.40 by March 9"). \
+Only extract items where the user has a clear next step. Skip: generic advice, document \
+boilerplate, marketing CTAs, informational statements, and lifestyle observations. For \
+invoices/bills, extract only the payment action with amount and due date. If an item is \
+waiting on someone else or an external event before the user can act (e.g., waiting for an \
+offer, a reply, a delivery), prefix the text with "#waiting-on " \
+(e.g., "#waiting-on Roofer sends carport offer"). Each item: \
+{"text": "...", "due_date": "YYYY-MM-DD" or null}
 - language: detected language of the input, either "en" or "de"
 - content_english: the content in English (original if input is English, translation if input is German)
 - content_german: the content in German (original if input is German, translation if input is English)

@@ -1,24 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 import asyncpg
 from nltk.corpus import stopwords
 
-from .models import ActionItem, Chunk, ChunkSearchResult, Memory, SearchResult
+from .models import ActionItem, Chunk, ChunkSearchResult, Memory, SearchResult  # ActionItem used in insert_action_items
 
 _STOPWORDS = frozenset(stopwords.words("english") + stopwords.words("german"))
 
 
 def _row_to_memory(row: asyncpg.Record) -> Memory:
-    action_items = [
-        ActionItem(
-            text=ai["text"],
-            status=ai.get("status", "open"),
-            due_date=ai.get("due_date"),
-        )
-        for ai in (row["action_items"] or [])
-    ]
     keys = row.keys()
     return Memory(
         id=row["id"],
@@ -27,7 +20,6 @@ def _row_to_memory(row: asyncpg.Record) -> Memory:
         summary=row["summary"],
         people=list(row["people"] or []),
         topics=list(row["topics"] or []),
-        action_items=action_items,
         connections=[UUID(str(c)) for c in (row["connections"] or [])],
         source=row["source"],
         source_metadata=dict(row["source_metadata"] or {}),
@@ -40,30 +32,28 @@ def _row_to_memory(row: asyncpg.Record) -> Memory:
 
 
 async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
-    action_items = [{"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items]
     keywords_text = " ".join(memory.keywords) if memory.keywords else ""
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             INSERT INTO memories
-                (content, summary, people, topics, action_items,
+                (content, summary, people, topics,
                  connections, source, source_metadata,
                  language, content_english, content_german,
                  keywords, questions, search_vector)
-            VALUES ($1, $2, $3, $4, $5::jsonb, $6::uuid[], $7, $8::jsonb,
-                    $9, $10, $11, $12, $13,
-                    setweight(to_tsvector('english', COALESCE($10, '')), 'A') ||
-                    setweight(to_tsvector('german',  COALESCE($11, '')), 'A') ||
+            VALUES ($1, $2, $3, $4, $5::uuid[], $6, $7::jsonb,
+                    $8, $9, $10, $11, $12,
+                    setweight(to_tsvector('english', COALESCE($9, '')), 'A') ||
+                    setweight(to_tsvector('german',  COALESCE($10, '')), 'A') ||
                     setweight(to_tsvector('english', COALESCE($2, '')),  'B') ||
-                    setweight(to_tsvector('simple',  COALESCE($14, '')), 'B'))
+                    setweight(to_tsvector('simple',  COALESCE($13, '')), 'B'))
             RETURNING id
             """,
             memory.content,
             memory.summary,
             memory.people,
             memory.topics,
-            action_items,
             [str(c) for c in memory.connections],
             memory.source,
             memory.source_metadata,
@@ -78,29 +68,27 @@ async def insert_memory(pool: asyncpg.Pool, memory: Memory) -> UUID:
 
 
 async def insert_memory_with_conn(conn: asyncpg.Connection, memory: Memory) -> UUID:
-    action_items = [{"text": ai.text, "status": ai.status, "due_date": ai.due_date} for ai in memory.action_items]
     keywords_text = " ".join(memory.keywords) if memory.keywords else ""
 
     row = await conn.fetchrow(
         """
         INSERT INTO memories
-            (content, summary, people, topics, action_items,
+            (content, summary, people, topics,
              connections, source, source_metadata,
              language, content_english, content_german,
              keywords, questions, search_vector)
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6::uuid[], $7, $8::jsonb,
-                $9, $10, $11, $12, $13,
-                setweight(to_tsvector('english', COALESCE($10, '')), 'A') ||
-                setweight(to_tsvector('german',  COALESCE($11, '')), 'A') ||
+        VALUES ($1, $2, $3, $4, $5::uuid[], $6, $7::jsonb,
+                $8, $9, $10, $11, $12,
+                setweight(to_tsvector('english', COALESCE($9, '')), 'A') ||
+                setweight(to_tsvector('german',  COALESCE($10, '')), 'A') ||
                 setweight(to_tsvector('english', COALESCE($2, '')),  'B') ||
-                setweight(to_tsvector('simple',  COALESCE($14, '')), 'B'))
+                setweight(to_tsvector('simple',  COALESCE($13, '')), 'B'))
         RETURNING id
         """,
         memory.content,
         memory.summary,
         memory.people,
         memory.topics,
-        action_items,
         [str(c) for c in memory.connections],
         memory.source,
         memory.source_metadata,
@@ -157,7 +145,6 @@ async def search_chunks(
                 m.summary,
                 m.people,
                 m.topics,
-                m.action_items,
                 m.connections,
                 m.source,
                 m.source_metadata,
@@ -186,14 +173,6 @@ async def search_chunks(
                 summary=row["summary"],
                 people=list(row["people"] or []),
                 topics=list(row["topics"] or []),
-                action_items=[
-                    ActionItem(
-                        text=ai["text"],
-                        status=ai.get("status", "open"),
-                        due_date=ai.get("due_date"),
-                    )
-                    for ai in (row["action_items"] or [])
-                ],
                 connections=[UUID(str(c)) for c in (row["connections"] or [])],
                 source=row["source"],
                 source_metadata=dict(row["source_metadata"] or {}),
@@ -238,6 +217,8 @@ async def list_memories(
     offset: int = 0,
     filter_topics: list[str] | None = None,
     filter_people: list[str] | None = None,
+    created_after: str | None = None,
+    created_before: str | None = None,
 ) -> list[Memory]:
     conditions = []
     params: list = []
@@ -251,6 +232,16 @@ async def list_memories(
     if filter_people:
         conditions.append(f"people && ${idx}::text[]")
         params.append(filter_people)
+        idx += 1
+
+    if created_after:
+        conditions.append(f"created_at >= ${idx}")
+        params.append(datetime.fromisoformat(created_after.replace("Z", "+00:00")))
+        idx += 1
+
+    if created_before:
+        conditions.append(f"created_at <= ${idx}")
+        params.append(datetime.fromisoformat(created_before.replace("Z", "+00:00")))
         idx += 1
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -341,6 +332,175 @@ async def update_connections(conn: asyncpg.Connection, memory_id: UUID, connecte
             str(cid),
             str(memory_id),
         )
+
+
+async def insert_action_items(conn: asyncpg.Connection, memory_id: UUID, items: list[ActionItem]) -> list[UUID]:
+    rows = await conn.fetch(
+        """
+        INSERT INTO action_items (memory_id, text, status, due_date)
+        SELECT $1::uuid, t, s, CASE WHEN d IS NOT NULL THEN d::date ELSE NULL END
+        FROM unnest($2::text[], $3::text[], $4::text[]) AS u(t, s, d)
+        RETURNING id
+        """,
+        str(memory_id),
+        [ai.text for ai in items],
+        [ai.status for ai in items],
+        [ai.due_date if ai.due_date else None for ai in items],
+    )
+    return [UUID(str(row["id"])) for row in rows]
+
+
+async def list_action_items(
+    pool: asyncpg.Pool,
+    status: str | None = "open",
+    due_before: str | None = None,
+    due_after: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict]:
+    conditions = []
+    params: list = []
+    idx = 1
+
+    if status and status != "all":
+        conditions.append(f"ai.status = ${idx}")
+        params.append(status)
+        idx += 1
+
+    if due_before:
+        conditions.append(f"ai.due_date <= ${idx}::date")
+        params.append(due_before)
+        idx += 1
+
+    if due_after:
+        conditions.append(f"ai.due_date >= ${idx}::date")
+        params.append(due_after)
+        idx += 1
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT ai.id, ai.memory_id, ai.text, ai.status, ai.due_date, ai.created_at,
+                   m.people, m.topics, m.source,
+                   LEFT(m.summary, 80) as memory_title
+            FROM action_items ai
+            JOIN memories m ON ai.memory_id = m.id
+            {where}
+            ORDER BY ai.due_date ASC NULLS LAST, ai.created_at DESC
+            LIMIT ${idx} OFFSET ${idx + 1}
+            """,
+            *params,
+        )
+        return [
+            {
+                "id": str(row["id"]),
+                "memory_id": str(row["memory_id"]),
+                "text": row["text"],
+                "status": row["status"],
+                "due_date": row["due_date"].isoformat() if row["due_date"] else None,
+                "created_at": row["created_at"].isoformat(),
+                "memory_title": row["memory_title"],
+                "people": list(row["people"] or []),
+                "topics": list(row["topics"] or []),
+                "source": row["source"],
+            }
+            for row in rows
+        ]
+
+
+async def update_action_item(
+    pool: asyncpg.Pool,
+    item_id: UUID,
+    status: str | None = None,
+    due_date: str | None = None,
+    clear_due_date: bool = False,
+) -> dict | None:
+    sets = []
+    params: list = []
+    idx = 1
+
+    if status is not None:
+        sets.append(f"status = ${idx}")
+        params.append(status)
+        idx += 1
+
+    if clear_due_date:
+        sets.append("due_date = NULL")
+    elif due_date is not None:
+        sets.append(f"due_date = ${idx}::date")
+        params.append(due_date)
+        idx += 1
+
+    if not sets:
+        return None
+
+    params.append(str(item_id))
+    row = None
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE action_items SET {', '.join(sets)} WHERE id = ${idx} RETURNING id, text, status, due_date",
+            *params,
+        )
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "text": row["text"],
+        "status": row["status"],
+        "due_date": row["due_date"].isoformat() if row["due_date"] else None,
+    }
+
+
+async def delete_action_item(pool: asyncpg.Pool, item_id: UUID) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.execute("DELETE FROM action_items WHERE id = $1", str(item_id))
+    return result == "DELETE 1"
+
+
+async def find_connection_candidates(
+    pool: asyncpg.Pool,
+    embedding: list[float],
+    topics: list[str],
+    keywords: list[str],
+    people: list[str],
+    limit: int,
+    threshold: float,
+    topic_boost: float = 0.1,
+    people_boost: float = 0.05,
+    keyword_boost: float = 0.05,
+    composite_threshold: float = 0.5,
+) -> list[ChunkSearchResult]:
+    chunk_results = await search_chunks(pool=pool, embedding=embedding, threshold=threshold, limit=limit * 3)
+
+    topics_set = set(t.lower() for t in topics)
+    people_set = set(p.lower() for p in people)
+    keywords_set = set(k.lower() for k in keywords)
+
+    # Dedupe to memory level, keeping max composite score
+    best: dict[UUID, tuple[float, ChunkSearchResult]] = {}
+    for r in chunk_results:
+        base = r.similarity
+        boost = 0.0
+        mem = r.memory
+        if topics_set & set(t.lower() for t in mem.topics):
+            boost += topic_boost
+        if people_set & set(p.lower() for p in mem.people):
+            boost += people_boost
+        mem_kw = set(k.lower() for k in mem.keywords)
+        if len(keywords_set & mem_kw) >= 2:
+            boost += keyword_boost
+        composite = base + boost
+        mid = mem.id
+        if mid not in best or composite > best[mid][0]:
+            best[mid] = (composite, r)
+
+    results = [
+        r for score, r in sorted(best.values(), key=lambda x: x[0], reverse=True) if score >= composite_threshold
+    ]
+    return results[:limit]
 
 
 async def find_memory_by_paperless_id(pool: asyncpg.Pool, doc_id: int) -> UUID | None:
