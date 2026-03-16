@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 import asyncpg
@@ -234,13 +235,13 @@ async def list_memories(
         idx += 1
 
     if created_after:
-        conditions.append(f"created_at >= ${idx}::timestamptz")
-        params.append(created_after)
+        conditions.append(f"created_at >= ${idx}")
+        params.append(datetime.fromisoformat(created_after.replace("Z", "+00:00")))
         idx += 1
 
     if created_before:
-        conditions.append(f"created_at <= ${idx}::timestamptz")
-        params.append(created_before)
+        conditions.append(f"created_at <= ${idx}")
+        params.append(datetime.fromisoformat(created_before.replace("Z", "+00:00")))
         idx += 1
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
