@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -29,6 +30,11 @@ def create_slack_app(
     settings: Settings,
 ) -> tuple[AsyncApp, AsyncSocketModeHandler]:
     app = AsyncApp(token=settings.slack_bot_token)
+    _save_sem = asyncio.Semaphore(settings.slack.max_concurrent_saves)
+
+    async def bounded_save(**kwargs):
+        async with _save_sem:
+            return await save_memory(**kwargs)
 
     async def mark_processing(client, channel, ts):
         try:
@@ -163,7 +169,7 @@ def create_slack_app(
         existing_id = await find_memory_by_slack_ts(pool, channel, thread_ts)
         if existing_id:
             await delete_memory(pool, existing_id)
-        await save_memory(
+        await bounded_save(
             pool=pool,
             embedder=embedder,
             settings=settings,
@@ -210,7 +216,7 @@ def create_slack_app(
             existing_id = await find_memory_by_paperless_id(pool, doc_id)
             if existing_id:
                 await delete_memory(pool, existing_id)
-            await save_memory(
+            await bounded_save(
                 pool=pool,
                 embedder=embedder,
                 settings=settings,
@@ -255,7 +261,7 @@ def create_slack_app(
                 content, extra_meta = await build_message_content(client, message)
                 if not content:
                     return
-                await save_memory(
+                await bounded_save(
                     pool=pool,
                     embedder=embedder,
                     settings=settings,
@@ -298,7 +304,7 @@ def create_slack_app(
             if not content:
                 await mark_error(client, channel, ts)
                 return
-            await save_memory(
+            await bounded_save(
                 pool=pool,
                 embedder=embedder,
                 settings=settings,
@@ -348,7 +354,7 @@ def create_slack_app(
                 content, extra_meta = await build_message_content(client, event)
                 if not content:
                     return
-                await save_memory(
+                await bounded_save(
                     pool=pool,
                     embedder=embedder,
                     settings=settings,
