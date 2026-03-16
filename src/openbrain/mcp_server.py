@@ -53,7 +53,7 @@ def create_mcp_server(
 
     @mcp.tool()
     async def search_memories(query: str, limit: int = 10, debug: bool = False) -> dict:
-        """Search the user's personal memory store using hybrid semantic + keyword search. Use this proactively whenever the user asks about anything personal — past events, people, places, finances, appointments, invoices, health, travel, or any information they may have previously stored. Returns matching memories. Set debug=true for explainability info.
+        """Search the user's personal memory store using hybrid semantic + keyword search. Use this proactively whenever the user asks about anything personal — past events, people, places, finances, appointments, invoices, health, travel, or any information they may have previously stored. Returns the matching chunk and metadata per result — use get_memory(id) to fetch the full content of a specific memory. Set debug=true for explainability info.
 
         Query guidelines: Pass all relevant details from the user's question — including names, dates, amounts, and specific terms. Do not omit details, but also do not pad the query with filler. For example, prefer "electricity bill January Stadtwerke" over just "electricity bill", but do not wrap it in a full sentence."""  # noqa: E501
         outcome = await hybrid_search(
@@ -72,7 +72,6 @@ def create_mcp_server(
         hits = [
             {
                 "id": str(r.memory.id),
-                "content": r.memory.content,
                 "summary": r.memory.summary,
                 "people": r.memory.people,
                 "topics": r.memory.topics,
