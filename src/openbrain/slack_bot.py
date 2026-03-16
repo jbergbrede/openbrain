@@ -228,6 +228,11 @@ def create_slack_app(
         except Exception as e:
             logger.error(f"Failed to capture Paperless document {doc_id}: {e}")
             await mark_error(client, channel, ts)
+            await client.chat_postMessage(
+                channel=channel,
+                thread_ts=ts,
+                text=f"Failed to save document {doc_id} to memory: {e}",
+            )
 
     @app.event("reaction_added")
     async def handle_reaction(event, client, logger):
